@@ -1,0 +1,249 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Light Mode (Day Sky) ─────────────────────── */
+    --background: 205 70% 94%;
+    --foreground: 220 40% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 40% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 40% 12%;
+
+    --primary: 215 85% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 170 55% 42%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 210 25% 90%;
+    --muted-foreground: 215 20% 45%;
+
+    --accent: 30 90% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 210 30% 84%;
+    --input: 210 30% 84%;
+    --ring: 215 85% 50%;
+
+    --radius: 0.85rem;
+
+    /* Custom tokens */
+    --success: 152 55% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 52%;
+    --warning-foreground: 0 0% 100%;
+
+    --teacher: 215 85% 50%;
+    --teacher-foreground: 0 0% 100%;
+    --student: 170 55% 42%;
+    --student-foreground: 0 0% 100%;
+    --parent: 30 90% 55%;
+    --parent-foreground: 0 0% 100%;
+
+    /* Day sky gradients */
+    --gradient-hero: linear-gradient(170deg, hsl(200 80% 75%) 0%, hsl(215 85% 60%) 50%, hsl(230 70% 55%) 100%);
+    --gradient-teacher: linear-gradient(135deg, hsl(215 85% 50%), hsl(228 72% 62%));
+    --gradient-student: linear-gradient(135deg, hsl(170 55% 42%), hsl(158 60% 52%));
+    --gradient-parent: linear-gradient(135deg, hsl(30 90% 55%), hsl(18 85% 52%));
+    --gradient-sky: linear-gradient(180deg, hsl(200 85% 75%) 0%, hsl(205 70% 92%) 100%);
+
+    --shadow-soft: 0 2px 20px -4px hsl(215 80% 52% / 0.12);
+    --shadow-card: 0 4px 30px -8px hsl(220 40% 12% / 0.10);
+    --shadow-elevated: 0 12px 44px -12px hsl(215 80% 40% / 0.20);
+    --shadow-glow: 0 0 30px hsl(215 85% 60% / 0.25);
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'DM Sans', sans-serif;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 40% 12%;
+    --sidebar-primary: 215 85% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 25% 90%;
+    --sidebar-accent-foreground: 220 40% 12%;
+    --sidebar-border: 210 30% 84%;
+    --sidebar-ring: 215 85% 50%;
+  }
+
+  .dark {
+    /* ── Dark Mode (Night Sky) ─────────────────────── */
+    --background: 230 35% 7%;
+    --foreground: 210 25% 92%;
+
+    --card: 228 30% 11%;
+    --card-foreground: 210 25% 92%;
+
+    --popover: 228 30% 11%;
+    --popover-foreground: 210 25% 92%;
+
+    --primary: 215 85% 62%;
+    --primary-foreground: 220 40% 8%;
+
+    --secondary: 170 55% 50%;
+    --secondary-foreground: 220 40% 8%;
+
+    --muted: 228 22% 17%;
+    --muted-foreground: 215 18% 60%;
+
+    --accent: 30 90% 60%;
+    --accent-foreground: 220 40% 8%;
+
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 210 25% 92%;
+
+    --border: 228 20% 18%;
+    --input: 228 20% 18%;
+    --ring: 215 85% 62%;
+
+    /* Night sky gradients */
+    --gradient-hero: linear-gradient(170deg, hsl(240 50% 8%) 0%, hsl(228 45% 10%) 50%, hsl(200 30% 12%) 100%);
+    --gradient-teacher: linear-gradient(135deg, hsl(215 85% 45%), hsl(228 70% 35%));
+    --gradient-student: linear-gradient(135deg, hsl(170 55% 35%), hsl(158 60% 28%));
+    --gradient-parent: linear-gradient(135deg, hsl(30 80% 45%), hsl(20 75% 35%));
+    --gradient-sky: linear-gradient(180deg, hsl(240 50% 8%) 0%, hsl(228 40% 10%) 60%, hsl(210 35% 12%) 100%);
+
+    --shadow-soft: 0 2px 20px -4px hsl(0 0% 0% / 0.40);
+    --shadow-card: 0 4px 30px -8px hsl(0 0% 0% / 0.50);
+    --shadow-elevated: 0 12px 44px -12px hsl(0 0% 0% / 0.60);
+    --shadow-glow: 0 0 40px hsl(215 85% 50% / 0.20), 0 0 80px hsl(170 55% 40% / 0.12);
+
+    --sidebar-background: 228 32% 9%;
+    --sidebar-foreground: 210 25% 92%;
+    --sidebar-primary: 215 85% 62%;
+    --sidebar-primary-foreground: 220 40% 8%;
+    --sidebar-accent: 228 22% 17%;
+    --sidebar-accent-foreground: 210 25% 92%;
+    --sidebar-border: 228 20% 18%;
+    --sidebar-ring: 215 85% 62%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+}
+
+/* ── Stars animation (dark mode only) ─────── */
+.dark .stars-bg::before,
+.dark .stars-bg::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dark .stars-bg::before {
+  background-image:
+    radial-gradient(1px 1px at 10% 15%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 25% 40%, white 0, transparent 100%),
+    radial-gradient(1.5px 1.5px at 45% 8%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 60% 28%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 75% 55%, white 0, transparent 100%),
+    radial-gradient(1.5px 1.5px at 88% 12%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 35% 72%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 52% 65%, white 0, transparent 100%),
+    radial-gradient(2px 2px at 18% 82%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 92% 78%, white 0, transparent 100%),
+    radial-gradient(1.5px 1.5px at 68% 88%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 80% 44%, white 0, transparent 100%);
+  opacity: 0.55;
+  animation: twinkle 4s ease-in-out infinite alternate;
+}
+
+.dark .stars-bg::after {
+  background-image:
+    radial-gradient(1px 1px at 5% 60%, white 0, transparent 100%),
+    radial-gradient(1.5px 1.5px at 30% 22%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 55% 38%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 70% 70%, white 0, transparent 100%),
+    radial-gradient(2px 2px at 90% 30%, white 0, transparent 100%),
+    radial-gradient(1px 1px at 40% 90%, white 0, transparent 100%),
+    radial-gradient(1.5px 1.5px at 15% 45%, white 0, transparent 100%);
+  opacity: 0.40;
+  animation: twinkle 6s ease-in-out infinite alternate-reverse;
+}
+
+/* Nebula glow in dark mode */
+.dark .nebula-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 60% 40% at 80% 20%, hsl(190 80% 40% / 0.08) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 30% at 20% 80%, hsl(270 60% 50% / 0.06) 0%, transparent 70%);
+}
+
+@keyframes twinkle {
+  0% { opacity: 0.35; }
+  100% { opacity: 0.65; }
+}
+
+@layer utilities {
+  .gradient-hero    { background: var(--gradient-hero); }
+  .gradient-teacher { background: var(--gradient-teacher); }
+  .gradient-student { background: var(--gradient-student); }
+  .gradient-parent  { background: var(--gradient-parent); }
+  .bg-sky           { background: var(--gradient-sky); }
+
+  .shadow-soft     { box-shadow: var(--shadow-soft); }
+  .shadow-card     { box-shadow: var(--shadow-card); }
+  .shadow-elevated { box-shadow: var(--shadow-elevated); }
+  .shadow-glow     { box-shadow: var(--shadow-glow); }
+
+  .text-accessible  { @apply text-lg leading-relaxed tracking-wide; }
+  .focus-accessible { @apply focus:outline-none focus:ring-4 focus:ring-ring/30 focus:ring-offset-2; }
+
+  .glass {
+    @apply bg-card/80 backdrop-blur-md border border-white/10;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.4s ease-out both;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Smooth theme transitions */
+*, *::before, *::after {
+  transition: background-color 0.35s ease, border-color 0.35s ease, color 0.15s ease, box-shadow 0.35s ease;
+}
+
+/* Override for interactive elements — don't slow down clicks */
+button, a, [role="button"] {
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+}
