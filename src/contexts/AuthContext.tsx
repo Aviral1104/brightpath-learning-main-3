@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getSupabaseClient, isBackendConfigured } from '@/integrations/backend/client';
-import { Session } from '@supabase/supabase-js';
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  User as FirebaseUser,
+} from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '@/integrations/firebase/client';
 
 export type UserRole = 'teacher' | 'student' | 'parent';
 
@@ -17,7 +24,7 @@ export interface AppUser {
 
 interface AuthContextType {
   user: AppUser | null;
-  session: Session | null;
+  session: FirebaseUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ error?: string }>;
   signup: (email: string, password: string, role: UserRole, meta: { name: string; school?: string }) => Promise<{ error?: string }>;
@@ -27,195 +34,116 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const DEV_BYPASS_STORAGE_KEY = 'dev_bypass_user';
 
-const isUserRole = (value: unknown): value is UserRole => value === 'teacher' || value === 'student' || value === 'parent';
+const DEV_BYPASS_KEY = 'dev_bypass_user';
+const isUserRole = (v: unknown): v is UserRole => v === 'teacher' || v === 'student' || v === 'parent';
 
 function readDevBypassUser(): AppUser | null {
   try {
-    const raw = sessionStorage.getItem(DEV_BYPASS_STORAGE_KEY);
+    const raw = sessionStorage.getItem(DEV_BYPASS_KEY);
     if (!raw) return null;
-
-    const parsed = JSON.parse(raw) as Partial<AppUser>;
-    if (!parsed?.id || !parsed?.name || !parsed?.email || !isUserRole(parsed?.role)) return null;
-
-    return {
-      id: parsed.id,
-      name: parsed.name,
-      email: parsed.email,
-      role: parsed.role,
-      school: parsed.school,
-      phone: parsed.phone,
-      bio: parsed.bio,
-      avatar_url: parsed.avatar_url,
-    };
-  } catch {
-    return null;
-  }
+    const p = JSON.parse(raw) as Partial<AppUser>;
+    if (!p?.id || !p?.name || !p?.email || !isUserRole(p?.role)) return null;
+    return { id: p.id, name: p.name, email: p.email, role: p.role, school: p.school, phone: p.phone, bio: p.bio, avatar_url: p.avatar_url };
+  } catch { return null; }
 }
 
-function clearDevBypassUser() {
+async function fetchUserProfile(uid: string): Promise<AppUser | null> {
   try {
-    sessionStorage.removeItem(DEV_BYPASS_STORAGE_KEY);
-  } catch {}
-}
-
-async function fetchUserProfile(userId: string): Promise<AppUser | null> {
-  const supabase = getSupabaseClient();
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-
-  const { data: roleData } = await supabase
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', userId)
-    .single();
-
-  if (!profile || !roleData) return null;
-
-  return {
-    id: userId,
-    name: profile.name,
-    email: profile.email,
-    role: roleData.role as UserRole,
-    school: profile.school || undefined,
-    phone: profile.phone || undefined,
-    bio: profile.bio || undefined,
-    avatar_url: profile.avatar_url || undefined,
-  };
+    const snap = await getDoc(doc(db, 'profiles', uid));
+    if (!snap.exists()) return null;
+    const data = snap.data();
+    return {
+      id: uid,
+      name: data.name || '',
+      email: data.email || '',
+      role: data.role as UserRole,
+      school: data.school,
+      phone: data.phone,
+      bio: data.bio,
+      avatar_url: data.avatar_url,
+    };
+  } catch { return null; }
 }
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AppUser | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isBackendConfigured) {
-      setUser(readDevBypassUser());
-      setSession(null);
+    const devUser = readDevBypassUser();
+    if (devUser) {
+      setUser(devUser);
       setLoading(false);
       return;
     }
 
-    const supabase = getSupabaseClient();
-
-    // Safety timeout: never stay loading forever
-    const loadingTimeout = setTimeout(() => {
-      setLoading(false);
-    }, 8000);
-
-    // Clear stale sessions that can't be refreshed
-    const clearStaleSession = () => {
-      try {
-        const storageKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
-        if (storageKey) localStorage.removeItem(storageKey);
-      } catch {}
-      setUser(readDevBypassUser());
-      setSession(null);
-      setLoading(false);
-      clearTimeout(loadingTimeout);
-    };
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
-      if (event === 'TOKEN_REFRESHED' && !nextSession) {
-        clearStaleSession();
-        return;
-      }
-      setSession(nextSession);
-      if (nextSession?.user) {
-        setTimeout(async () => {
-          try {
-            const appUser = await fetchUserProfile(nextSession.user.id);
-            setUser(appUser);
-          } catch {
-            setUser(readDevBypassUser());
-          }
-          setLoading(false);
-          clearTimeout(loadingTimeout);
-        }, 0);
+    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      setSession(firebaseUser);
+      if (firebaseUser) {
+        const appUser = await fetchUserProfile(firebaseUser.uid);
+        setUser(appUser);
       } else {
-        setUser(readDevBypassUser());
-        setLoading(false);
-        clearTimeout(loadingTimeout);
+        setUser(null);
       }
+      setLoading(false);
     });
-
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      setSession(initialSession);
-      if (initialSession?.user) {
-        fetchUserProfile(initialSession.user.id).then((appUser) => {
-          setUser(appUser);
-          setLoading(false);
-          clearTimeout(loadingTimeout);
-        }).catch(() => {
-          setUser(readDevBypassUser());
-          setLoading(false);
-          clearTimeout(loadingTimeout);
-        });
-      } else {
-        setUser(readDevBypassUser());
-        setLoading(false);
-        clearTimeout(loadingTimeout);
-      }
-    }).catch(() => {
-      clearStaleSession();
-    });
-
-    return () => subscription.unsubscribe();
+    return unsub;
   }, []);
 
   const login = async (email: string, password: string) => {
-    clearDevBypassUser();
-    if (!isBackendConfigured) return { error: 'Backend is not configured for this build yet.' };
     try {
-      const { error } = await getSupabaseClient().auth.signInWithPassword({ email, password });
-      if (error) return { error: error.message };
+      await signInWithEmailAndPassword(auth, email, password);
       return {};
     } catch (err: any) {
-      return { error: err?.message || 'Network error — please check your connection and try again.' };
+      const msg = err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password'
+        ? 'Invalid email or password'
+        : err?.message || 'Login failed';
+      return { error: msg };
     }
   };
 
   const signup = async (email: string, password: string, role: UserRole, meta: { name: string; school?: string }) => {
-    clearDevBypassUser();
-    if (!isBackendConfigured) return { error: 'Backend is not configured for this build yet.' };
     try {
-      const { error } = await getSupabaseClient().auth.signUp({
+      const { user: fbUser } = await createUserWithEmailAndPassword(auth, email, password);
+      // Create profile document in Firestore
+      await setDoc(doc(db, 'profiles', fbUser.uid), {
+        name: meta.name,
         email,
-        password,
-        options: {
-          data: { name: meta.name, role, school: meta.school || '' },
-          emailRedirectTo: window.location.origin,
-        },
+        role,
+        school: meta.school || '',
+        phone: '',
+        bio: '',
+        avatar_url: '',
+        expertise: [],
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
       });
-      if (error) return { error: error.message };
       return {};
     } catch (err: any) {
-      return { error: err?.message || 'Network error — please check your connection and try again.' };
+      const msg = err?.code === 'auth/email-already-in-use'
+        ? 'An account with this email already exists'
+        : err?.message || 'Signup failed';
+      return { error: msg };
     }
   };
 
   const logout = async () => {
-    clearDevBypassUser();
-    if (!isBackendConfigured) return;
-    await getSupabaseClient().auth.signOut();
+    sessionStorage.removeItem(DEV_BYPASS_KEY);
+    await signOut(auth);
     setUser(null);
     setSession(null);
   };
 
   const refreshProfile = async () => {
-    if (session?.user && isBackendConfigured) {
-      const appUser = await fetchUserProfile(session.user.id);
+    const current = session || auth.currentUser;
+    if (current) {
+      const appUser = await fetchUserProfile(current.uid);
       setUser(appUser);
-      return;
+    } else {
+      setUser(readDevBypassUser());
     }
-
-    setUser(readDevBypassUser());
   };
 
   return (
@@ -226,9 +154,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 };
 
 const defaultAuthContext: AuthContextType = {
-  user: null,
-  session: null,
-  loading: true,
+  user: null, session: null, loading: true,
   login: async () => ({ error: 'Auth not ready' }),
   signup: async () => ({ error: 'Auth not ready' }),
   logout: async () => {},

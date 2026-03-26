@@ -1,114 +1,151 @@
 import DashboardLayout from '@/components/DashboardLayout';
-import { useCourses } from '@/hooks/useCourses';
 import { useAuth } from '@/contexts/AuthContext';
-import { BookOpen, ClipboardList, MessageSquare, Users, Plus, UserCog } from 'lucide-react';
+import { BookOpen, ClipboardList, MessageSquare, Users, Plus, UserCog, Megaphone, MessageCircle, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
-import { getSupabaseClient } from '@/integrations/backend/client';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog';
+import { useCourses } from '@/hooks/useCourses';
+import { useTeacherStats } from '@/hooks/useTeacherStats';
+import { useAnnouncements } from '@/hooks/useAnnouncements';
+import { useForumThreads } from '@/hooks/useForums';
+import EditProfileModal from '@/components/EditProfileModal';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function TeacherDashboard() {
-  const { user, refreshProfile } = useAuth();
+  const { user } = useAuth();
   const { courses } = useCourses();
+  const { data: stats } = useTeacherStats();
+  const { data: announcements = [] } = useAnnouncements(3);
+  const { data: threads = [] } = useForumThreads(3);
 
-  const [editOpen, setEditOpen] = useState(false);
-  const [editName, setEditName] = useState(user?.name || '');
-  const [editSchool, setEditSchool] = useState(user?.school || '');
-  const [editPhone, setEditPhone] = useState(user?.phone || '');
-  const [editBio, setEditBio] = useState(user?.bio || '');
-  const [saving, setSaving] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
-  const handleSaveProfile = async () => {
-    const name = editName.trim();
-    if (!name || name.length > 200) { toast.error('Name is required and must be under 200 characters.'); return; }
-    if (editSchool.length > 300) { toast.error('School must be under 300 characters.'); return; }
-    if (editPhone.length > 50) { toast.error('Phone must be under 50 characters.'); return; }
-    if (editBio.length > 2000) { toast.error('Bio must be under 2000 characters.'); return; }
-    setSaving(true);
-    try {
-      const { error } = await getSupabaseClient().from('profiles').update({ name, school: editSchool.trim(), phone: editPhone.trim(), bio: editBio.trim() }).eq('user_id', user?.id);
-      if (error) throw error;
-      await refreshProfile();
-      toast.success('Profile updated!');
-      setEditOpen(false);
-    } catch (err: any) { toast.error(err.message || 'Failed to update'); } finally { setSaving(false); }
-  };
-
-  const stats = [
-    { label: 'Courses', value: courses.length, icon: BookOpen, color: 'bg-primary/10 text-primary' },
-    { label: 'Assignments', value: 0, icon: ClipboardList, color: 'bg-secondary/10 text-secondary' },
-    { label: 'Students', value: 0, icon: Users, color: 'bg-accent/10 text-accent' },
-    { label: 'Pending Reviews', value: 0, icon: MessageSquare, color: 'bg-warning/10 text-warning' },
+  const statCards = [
+    { label: 'My Courses',       value: courses.length,                      icon: BookOpen,    color: 'from-violet-500 to-indigo-600' },
+    { label: 'Total Assignments', value: stats?.totalAssignments ?? '—',      icon: ClipboardList, color: 'from-indigo-500 to-blue-600' },
+    { label: 'Students Enrolled', value: stats?.enrolledStudents ?? '—',     icon: Users,       color: 'from-purple-500 to-violet-600' },
+    { label: 'Pending Reviews',   value: stats?.pendingReviews ?? '—',        icon: MessageSquare, color: 'from-fuchsia-500 to-purple-600' },
   ];
 
   return (
     <DashboardLayout>
-      <div className="space-y-8">
+      <div className="space-y-8 animate-fade-in">
+
+        {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="font-display text-3xl font-bold text-foreground mb-1">
-              Welcome back, {user?.name?.split(' ')[0] || 'Teacher'} 👋
+            <p className="text-sm font-medium text-primary mb-1">Good day 👨‍🏫</p>
+            <h1 className="font-display text-4xl font-bold text-foreground mb-1">
+              Welcome, {user?.name?.split(' ')[0] || 'Teacher'}
             </h1>
-            <p className="text-muted-foreground text-accessible">Here's an overview of your teaching activities.</p>
+            <p className="text-muted-foreground">Here's an overview of your teaching activities.</p>
           </div>
-          <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="gap-2"><UserCog className="w-4 h-4" /> Edit Profile</Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader><DialogTitle className="font-display">Edit Profile</DialogTitle></DialogHeader>
-              <div className="space-y-4 mt-2">
-                <div><Label htmlFor="editName">Full Name *</Label><Input id="editName" value={editName} onChange={(e) => setEditName(e.target.value)} className="mt-1" /></div>
-                <div><Label htmlFor="editSchool">School / Institution</Label><Input id="editSchool" value={editSchool} onChange={(e) => setEditSchool(e.target.value)} className="mt-1" /></div>
-                <div><Label htmlFor="editPhone">Phone</Label><Input id="editPhone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="mt-1" /></div>
-                <div><Label htmlFor="editBio">Bio</Label><Input id="editBio" value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell us about yourself" className="mt-1" /></div>
-                <Button onClick={handleSaveProfile} disabled={saving} className="w-full gradient-teacher text-primary-foreground border-0">{saving ? 'Saving...' : 'Save Changes'}</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <div className="flex gap-2">
+            <Button onClick={() => setProfileOpen(true)} variant="outline" className="gap-2 rounded-full">
+              <UserCog className="w-4 h-4" /> Edit Profile
+            </Button>
+            <Link to="/teacher/courses">
+              <Button className="gradient-violet text-white border-0 shadow-violet rounded-full gap-2">
+                <Plus className="w-4 h-4" /> New Course
+              </Button>
+            </Link>
+          </div>
         </div>
 
+        {/* Stats */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {stats.map((s, i) => (
-            <div key={i} className="bg-card rounded-xl p-5 border border-border shadow-soft animate-fade-in" style={{ animationDelay: `${i * 0.05}s` }}>
-              <div className={`w-10 h-10 rounded-lg ${s.color} flex items-center justify-center mb-3`}><s.icon className="w-5 h-5" /></div>
-              <p className="text-2xl font-display font-bold text-foreground">{s.value}</p>
+          {statCards.map((s, i) => (
+            <div key={i} className="card-premium p-5 hover:shadow-elevated hover:-translate-y-0.5 transition-all animate-slide-up" style={{ animationDelay: `${i * 0.06}s` }}>
+              <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${s.color} flex items-center justify-center mb-4 shadow-violet`}>
+                <s.icon className="w-5 h-5 text-white" />
+              </div>
+              <p className="text-3xl font-display font-bold text-foreground mb-0.5">{s.value}</p>
               <p className="text-sm text-muted-foreground">{s.label}</p>
             </div>
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <Link to="/teacher/courses"><Button className="gap-2 gradient-teacher text-primary-foreground border-0"><Plus className="w-4 h-4" /> Create Course</Button></Link>
-          <Link to="/teacher/assignments"><Button variant="outline" className="gap-2"><Plus className="w-4 h-4" /> Create Assignment</Button></Link>
-        </div>
+        {/* Courses + Announcements + Forums */}
+        <div className="grid lg:grid-cols-3 gap-6">
 
-        <div>
-          <h2 className="font-display text-xl font-semibold text-foreground mb-4">Your Courses</h2>
-          {courses.length === 0 ? (
-            <p className="text-muted-foreground">No courses yet. Create one to get started!</p>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {courses.map((course, i) => (
-                <Link key={course.id} to={`/teacher/courses/${course.id}`} className="block">
-                  <div className="bg-card rounded-xl border border-border p-6 hover:shadow-elevated transition-all hover:-translate-y-0.5 animate-fade-in" style={{ animationDelay: `${0.2 + i * 0.05}s` }}>
-                    <span className="text-3xl mb-3 block">{course.icon || '📚'}</span>
-                    <h3 className="font-display font-semibold text-foreground mb-1">{course.title}</h3>
-                    <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{course.description}</p>
-                  </div>
-                </Link>
-              ))}
+          {/* Courses */}
+          <div className="lg:col-span-2">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-xl font-semibold text-foreground">Your Courses</h2>
+              <Link to="/teacher/courses" className="text-sm text-primary hover:underline font-medium">View All →</Link>
             </div>
-          )}
+            {courses.length === 0 ? (
+              <div className="card-premium p-10 text-center">
+                <BookOpen className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-muted-foreground">No courses yet. Create one to get started!</p>
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-3">
+                {courses.slice(0, 4).map((course, i) => (
+                  <Link key={course.id} to={`/teacher/courses/${course.id}`} className="block">
+                    <div className="card-premium p-5 hover:shadow-elevated hover:-translate-y-0.5 transition-all animate-fade-in group" style={{ animationDelay: `${0.2 + i * 0.05}s` }}>
+                      <span className="text-3xl mb-3 block">{course.icon || '📚'}</span>
+                      <h3 className="font-display font-semibold text-foreground mb-1 group-hover:text-primary transition-colors">{course.title}</h3>
+                      <p className="text-xs text-muted-foreground line-clamp-2">{course.description}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Right column */}
+          <div className="space-y-4">
+            {/* Announcements widget */}
+            <div className="card-premium p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Megaphone className="w-4 h-4 text-primary" />
+                  <h3 className="font-semibold text-sm text-foreground">Announcements</h3>
+                </div>
+                <Link to="/teacher/announcements" className="text-xs text-primary hover:underline">View All →</Link>
+              </div>
+              {announcements.length === 0
+                ? <p className="text-xs text-muted-foreground py-4 text-center">No announcements yet</p>
+                : <div className="space-y-2">
+                    {announcements.map(a => (
+                      <div key={a.id} className="p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors">
+                        <p className="text-sm font-medium text-foreground line-clamp-1">{a.title}</p>
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                          <Clock className="w-3 h-3" />{formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+              }
+            </div>
+
+            {/* Forums widget */}
+            <div className="card-premium p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="w-4 h-4 text-primary" />
+                  <h3 className="font-semibold text-sm text-foreground">Forum Threads</h3>
+                </div>
+                <Link to="/teacher/forums" className="text-xs text-primary hover:underline">View All →</Link>
+              </div>
+              {threads.length === 0
+                ? <p className="text-xs text-muted-foreground py-4 text-center">No threads yet</p>
+                : <div className="space-y-2">
+                    {threads.map(t => (
+                      <Link key={t.id} to={`/teacher/forums/${t.id}`} className="block p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors">
+                        <p className="text-sm font-medium text-foreground line-clamp-1">{t.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{t.reply_count} replies · {t.author_name}</p>
+                      </Link>
+                    ))}
+                  </div>
+              }
+            </div>
+          </div>
         </div>
       </div>
+
+      <EditProfileModal open={profileOpen} onOpenChange={setProfileOpen} />
     </DashboardLayout>
   );
 }
-

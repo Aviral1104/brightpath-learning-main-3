@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSupabaseClient } from '@/integrations/backend/client';
+import {
+  collection, query, where, orderBy, getDocs, addDoc, updateDoc,
+  doc, getDoc, serverTimestamp
+} from 'firebase/firestore';
+import { db } from '@/integrations/firebase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
@@ -48,81 +52,74 @@ export interface FullAssignment extends DbAssignment {
   course_icon?: string;
 }
 
-// Fetch assignments with questions/options
-async function fetchAssignmentsWithDetails(filter?: { teacher_id?: string; course_ids?: string[] }): Promise<FullAssignment[]> {
-  const supabase = getSupabaseClient();
-  let query = supabase.from('assignments').select('*').order('created_at', { ascending: false });
+const toDate = (v: any) => v?.toDate?.()?.toISOString() || new Date().toISOString();
 
-  if (filter?.teacher_id) query = query.eq('teacher_id', filter.teacher_id);
-  if (filter?.course_ids && filter.course_ids.length > 0) query = query.in('course_id', filter.course_ids);
+async function fetchAssignmentsWithDetails(filter: { teacher_id?: string; course_ids?: string[] }): Promise<FullAssignment[]> {
+  if (filter.course_ids && filter.course_ids.length === 0) return [];
 
-  const { data: assignments, error } = await query;
-  if (error) throw error;
-  if (!assignments || assignments.length === 0) return [];
-
-  const assignmentIds = assignments.map(a => a.id);
-
-  const [questionsRes, coursesRes] = await Promise.all([
-    supabase.from('mcq_questions').select('*').in('assignment_id', assignmentIds).order('sort_order'),
-    supabase.from('courses').select('id, title, icon').in('id', assignments.map(a => a.course_id)),
-  ]);
-
-  const questions = questionsRes.data || [];
-  const courses = coursesRes.data || [];
-  const courseMap = Object.fromEntries(courses.map(c => [c.id, c]));
-
-  let options: DbOption[] = [];
-  if (questions.length > 0) {
-    const { data } = await supabase.from('mcq_options').select('*').in('question_id', questions.map(q => q.id)).order('sort_order');
-    options = (data || []) as DbOption[];
+  let assignmentSnap;
+  if (filter.teacher_id) {
+    assignmentSnap = await getDocs(query(collection(db, 'assignments'), where('teacher_id', '==', filter.teacher_id)));
+  } else if (filter.course_ids && filter.course_ids.length > 0) {
+    assignmentSnap = await getDocs(query(collection(db, 'assignments'), where('course_id', 'in', filter.course_ids.slice(0, 10))));
+  } else {
+    return [];
   }
 
-  return assignments.map(a => ({
-    ...a,
-    course_title: courseMap[a.course_id]?.title,
-    course_icon: courseMap[a.course_id]?.icon,
-    questions: questions
-      .filter(q => q.assignment_id === a.id)
-      .map(q => ({
-        ...q,
-        options: options.filter(o => o.question_id === q.id),
-      })),
-  })) as FullAssignment[];
+  if (assignmentSnap.empty) return [];
+  const assignments = assignmentSnap.docs
+    .map(d => ({ id: d.id, ...d.data(), created_at: toDate(d.data().created_at) }))
+    .sort((a: any, b: any) => b.created_at.localeCompare(a.created_at)) as any[];
+
+  // Fetch course info
+  const courseIds = [...new Set(assignments.map((a: any) => a.course_id))];
+  const courseMap: Record<string, any> = {};
+  await Promise.all(courseIds.map(async (cid) => {
+    const snap = await getDoc(doc(db, 'courses', cid as string));
+    if (snap.exists()) courseMap[cid as string] = snap.data();
+  }));
+
+  // Fetch questions and options
+  return Promise.all(assignments.map(async (a: any) => {
+    const qSnap = await getDocs(query(collection(db, 'mcq_questions'), where('assignment_id', '==', a.id)));
+    const questions = qSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => a.sort_order - b.sort_order) as DbQuestion[];
+    const questionsWithOptions = await Promise.all(
+      questions.map(async (q) => {
+        const oSnap = await getDocs(query(collection(db, 'mcq_options'), where('question_id', '==', q.id)));
+        return { ...q, options: oSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => a.sort_order - b.sort_order) as DbOption[] };
+      })
+    );
+    return {
+      ...a,
+      course_title: courseMap[a.course_id]?.title,
+      course_icon: courseMap[a.course_id]?.icon,
+      questions: questionsWithOptions,
+    };
+  }));
 }
 
-// Teacher: list own assignments
 export function useTeacherAssignments() {
   const { user } = useAuth();
   return useQuery({
     queryKey: ['assignments', 'teacher', user?.id],
     queryFn: () => fetchAssignmentsWithDetails({ teacher_id: user!.id }),
-    enabled: !!user,
+    enabled: !!user && user.role === 'teacher',
   });
 }
 
-// Student: list assignments for enrolled courses
 export function useStudentAssignments() {
   const { user } = useAuth();
   return useQuery({
     queryKey: ['assignments', 'student', user?.id],
     queryFn: async () => {
-      const supabase = getSupabaseClient();
-      const { data: enrollments } = await supabase
-        .from('course_enrollments')
-        .select('course_id')
-        .eq('student_id', user!.id);
-
-      // Also show assignments for all courses (public)
-      const { data: allCourses } = await supabase.from('courses').select('id');
-      const courseIds = (allCourses || []).map(c => c.id);
-      if (courseIds.length === 0) return [];
+      const coursesSnap = await getDocs(collection(db, 'courses'));
+      const courseIds = coursesSnap.docs.map(d => d.id);
       return fetchAssignmentsWithDetails({ course_ids: courseIds });
     },
-    enabled: !!user,
+    enabled: !!user && user.role === 'student',
   });
 }
 
-// Teacher: create assignment with questions
 export interface CreateAssignmentInput {
   title: string;
   course_id: string;
@@ -142,195 +139,112 @@ export function useCreateAssignment() {
 
   return useMutation({
     mutationFn: async (input: CreateAssignmentInput) => {
-      const supabase = getSupabaseClient();
       const title = input.title?.trim();
-      if (!title || title.length > 200) throw new Error('Title is required (max 200 chars).');
+      if (!title) throw new Error('Title is required.');
       if (input.questions.length === 0) throw new Error('Add at least one question.');
 
       for (const q of input.questions) {
         if (!q.question.trim()) throw new Error('Question text cannot be empty.');
         if (q.options.length < 2) throw new Error('Each question needs at least 2 options.');
-        if (!q.options.some(o => o.is_correct)) throw new Error('Each question needs at least one correct answer.');
+        if (!q.options.some(o => o.is_correct)) throw new Error('Each question needs a correct answer.');
       }
 
-      // Insert assignment
-      const { data: assignment, error: aErr } = await supabase
-        .from('assignments')
-        .insert({
-          title,
-          course_id: input.course_id,
-          chapter_id: input.chapter_id || null,
-          teacher_id: user!.id,
-          difficulty: input.difficulty,
-          due_date: input.due_date || null,
-        })
-        .select()
-        .single();
-      if (aErr) throw aErr;
+      const assignRef = await addDoc(collection(db, 'assignments'), {
+        title, course_id: input.course_id, chapter_id: input.chapter_id || null,
+        teacher_id: user!.id, difficulty: input.difficulty, due_date: input.due_date || null,
+        created_at: serverTimestamp(),
+      });
 
-      // Insert questions
-      const questionInserts = input.questions.map((q, i) => ({
-        assignment_id: assignment.id,
-        question: q.question.trim(),
-        difficulty: q.difficulty,
-        sort_order: i,
+      await Promise.all(input.questions.map(async (q, i) => {
+        const qRef = await addDoc(collection(db, 'mcq_questions'), {
+          assignment_id: assignRef.id, question: q.question.trim(), difficulty: q.difficulty, sort_order: i,
+        });
+        await Promise.all(q.options.map((opt, oi) =>
+          addDoc(collection(db, 'mcq_options'), { question_id: qRef.id, text: opt.text.trim(), is_correct: opt.is_correct, sort_order: oi })
+        ));
       }));
 
-      const { data: dbQuestions, error: qErr } = await supabase
-        .from('mcq_questions')
-        .insert(questionInserts)
-        .select();
-      if (qErr) throw qErr;
-
-      // Insert options
-      const optionInserts = dbQuestions!.flatMap((dbQ, qi) =>
-        input.questions[qi].options.map((opt, oi) => ({
-          question_id: dbQ.id,
-          text: opt.text.trim(),
-          is_correct: opt.is_correct,
-          sort_order: oi,
-        }))
-      );
-
-      const { error: oErr } = await supabase.from('mcq_options').insert(optionInserts);
-      if (oErr) throw oErr;
-
-      return assignment;
+      return assignRef;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['assignments'] });
-      toast.success('Assignment created!');
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['assignments'] }); toast.success('Assignment created!'); },
     onError: (err: any) => toast.error(err.message),
   });
 }
 
-// Student: submit assignment
 export function useSubmitAssignment() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (input: { assignment: FullAssignment; answers: Record<string, string> }) => {
-      const supabase = getSupabaseClient();
       const { assignment, answers } = input;
-
-      // Calculate score
       let score = 0;
       for (const q of assignment.questions) {
-        const selectedOptionId = answers[q.id];
         const correctOption = q.options.find(o => o.is_correct);
-        if (selectedOptionId && correctOption && selectedOptionId === correctOption.id) {
-          score++;
-        }
+        if (correctOption && answers[q.id] === correctOption.id) score++;
       }
-
-      const { data, error } = await supabase
-        .from('submissions')
-        .insert({
-          assignment_id: assignment.id,
-          student_id: user!.id,
-          answers,
-          score,
-          total_questions: assignment.questions.length,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      await addDoc(collection(db, 'submissions'), {
+        assignment_id: assignment.id, student_id: user!.id, answers, score,
+        total_questions: assignment.questions.length, feedback: null, insights: null,
+        submitted_at: serverTimestamp(),
+      });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['submissions'] });
-      queryClient.invalidateQueries({ queryKey: ['assignments'] });
-      toast.success('Assignment submitted!');
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['submissions'] }); toast.success('Assignment submitted!'); },
     onError: (err: any) => toast.error(err.message),
   });
 }
 
-// Fetch submissions
 export function useStudentSubmissions() {
   const { user } = useAuth();
   return useQuery({
     queryKey: ['submissions', 'student', user?.id],
     queryFn: async () => {
-      const { data, error } = await getSupabaseClient()
-        .from('submissions')
-        .select('*')
-        .eq('student_id', user!.id);
-      if (error) throw error;
-      return (data || []) as DbSubmission[];
+      const snap = await getDocs(query(collection(db, 'submissions'), where('student_id', '==', user!.id)));
+      return snap.docs.map(d => ({ id: d.id, ...d.data(), submitted_at: toDate(d.data().submitted_at) })) as DbSubmission[];
     },
     enabled: !!user,
   });
 }
 
-// Teacher: fetch submissions for their assignments
 export function useTeacherSubmissions() {
   const { user } = useAuth();
   return useQuery({
     queryKey: ['submissions', 'teacher', user?.id],
     queryFn: async () => {
-      const supabase = getSupabaseClient();
-      // Get teacher's assignments first
-      const { data: assignments } = await supabase
-        .from('assignments')
-        .select('id, title')
-        .eq('teacher_id', user!.id);
+      const assignSnap = await getDocs(query(collection(db, 'assignments'), where('teacher_id', '==', user!.id)));
+      if (assignSnap.empty) return [];
+      const assignmentIds = assignSnap.docs.map(d => d.id);
+      const assignmentTitles = Object.fromEntries(assignSnap.docs.map(d => [d.id, d.data().title]));
 
-      if (!assignments || assignments.length === 0) return [];
+      const subSnap = await getDocs(query(collection(db, 'submissions'), where('assignment_id', 'in', assignmentIds.slice(0, 10))));
+      const submissions = subSnap.docs.map(d => ({ id: d.id, ...d.data(), submitted_at: toDate(d.data().submitted_at) })) as any[];
 
-      const { data: submissions, error } = await supabase
-        .from('submissions')
-        .select('*')
-        .in('assignment_id', assignments.map(a => a.id))
-        .order('submitted_at', { ascending: false });
-      if (error) throw error;
+      const studentIds = [...new Set(submissions.map((s: any) => s.student_id))];
+      const nameMap: Record<string, string> = {};
+      await Promise.all(studentIds.map(async (sid) => {
+        const p = await getDoc(doc(db, 'profiles', sid as string));
+        if (p.exists()) nameMap[sid as string] = p.data().name;
+      }));
 
-      // Get student names
-      const studentIds = [...new Set((submissions || []).map(s => s.student_id))];
-      let studentMap: Record<string, string> = {};
-      if (studentIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('public_profiles' as any)
-          .select('user_id, name')
-          .in('user_id', studentIds);
-        studentMap = Object.fromEntries((profiles || []).map((p: any) => [p.user_id, p.name]));
-      }
-
-      const assignmentMap = Object.fromEntries(assignments.map(a => [a.id, a.title]));
-
-      return (submissions || []).map(s => ({
+      return submissions.map((s: any) => ({
         ...s,
-        student_name: studentMap[s.student_id] || 'Unknown',
-        assignment_title: assignmentMap[s.assignment_id] || 'Unknown',
+        student_name: nameMap[s.student_id] || 'Unknown',
+        assignment_title: assignmentTitles[s.assignment_id] || 'Unknown',
       }));
     },
-    enabled: !!user,
+    enabled: !!user && user.role === 'teacher',
   });
 }
 
-// Teacher: give feedback
 export function useGiveFeedback() {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: async (input: { submissionId: string; feedback: string; insights?: string }) => {
       const feedback = input.feedback?.trim();
-      if (!feedback || feedback.length > 2000) throw new Error('Feedback is required (max 2000 chars).');
-      const insights = input.insights?.trim() || null;
-      if (insights && insights.length > 2000) throw new Error('Insights must be under 2000 chars.');
-
-      const { error } = await getSupabaseClient()
-        .from('submissions')
-        .update({ feedback, insights })
-        .eq('id', input.submissionId);
-      if (error) throw error;
+      if (!feedback) throw new Error('Feedback is required.');
+      await updateDoc(doc(db, 'submissions', input.submissionId), { feedback, insights: input.insights?.trim() || null });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['submissions'] });
-      toast.success('Feedback saved!');
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['submissions'] }); toast.success('Feedback saved!'); },
     onError: (err: any) => toast.error(err.message),
   });
 }

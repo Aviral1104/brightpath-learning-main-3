@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSupabaseClient } from '@/integrations/backend/client';
+import {
+  collection, query, where, orderBy, getDocs, addDoc, updateDoc, deleteDoc,
+  doc, getDoc, serverTimestamp
+} from 'firebase/firestore';
+import { db } from '@/integrations/firebase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
@@ -38,6 +42,8 @@ export interface CourseWithContent extends DbCourse {
   chapters: (DbChapter & { subchapters: DbSubchapter[] })[];
 }
 
+const toDate = (v: any) => v?.toDate?.()?.toISOString() || new Date().toISOString();
+
 export function useCourses() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -45,13 +51,13 @@ export function useCourses() {
   const coursesQuery = useQuery({
     queryKey: ['courses', user?.id],
     queryFn: async () => {
-      const { data, error } = await getSupabaseClient()
-        .from('courses')
-        .select('*')
-        .eq('teacher_id', user!.id)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data as DbCourse[];
+      const snap = await getDocs(query(
+        collection(db, 'courses'),
+        where('teacher_id', '==', user!.id)
+      ));
+      return snap.docs
+        .map(d => ({ id: d.id, ...d.data(), created_at: toDate(d.data().created_at), updated_at: toDate(d.data().updated_at) }) as DbCourse)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at));
     },
     enabled: !!user,
   });
@@ -59,51 +65,32 @@ export function useCourses() {
   const createCourse = useMutation({
     mutationFn: async (input: { title: string; description: string; icon: string }) => {
       const title = input.title?.trim();
-      if (!title || title.length > 200) throw new Error('Title is required and must be under 200 characters.');
-      const description = input.description?.trim() || '';
-      if (description.length > 2000) throw new Error('Description must be under 2000 characters.');
-      const icon = input.icon?.trim() || '📚';
-      if (icon.length > 20) throw new Error('Invalid icon.');
-      const { data, error } = await getSupabaseClient()
-        .from('courses')
-        .insert({ title, description, icon, teacher_id: user!.id })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+      if (!title) throw new Error('Title is required.');
+      const ref = await addDoc(collection(db, 'courses'), {
+        title, description: input.description?.trim() || '', icon: input.icon?.trim() || '📚',
+        color: 'primary', teacher_id: user!.id,
+        created_at: serverTimestamp(), updated_at: serverTimestamp(),
+      });
+      return ref;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['courses'] });
-      toast.success('Course created!');
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['courses'] }); toast.success('Course created!'); },
     onError: (err: any) => toast.error(err.message),
   });
 
   const deleteCourse = useMutation({
-    mutationFn: async (courseId: string) => {
-      const { error } = await getSupabaseClient().from('courses').delete().eq('id', courseId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['courses'] });
-      toast.success('Course deleted');
-    },
+    mutationFn: async (courseId: string) => { await deleteDoc(doc(db, 'courses', courseId)); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['courses'] }); toast.success('Course deleted'); },
     onError: (err: any) => toast.error(err.message),
   });
 
   const updateCourse = useMutation({
     mutationFn: async (input: { id: string; title: string; description: string; icon: string }) => {
       const title = input.title?.trim();
-      if (!title || title.length > 200) throw new Error('Title is required and must be under 200 characters.');
-      const description = input.description?.trim() || '';
-      if (description.length > 2000) throw new Error('Description must be under 2000 characters.');
-      const icon = input.icon?.trim() || '📚';
-      if (icon.length > 20) throw new Error('Invalid icon.');
-      const { error } = await getSupabaseClient()
-        .from('courses')
-        .update({ title, description, icon })
-        .eq('id', input.id);
-      if (error) throw error;
+      if (!title) throw new Error('Title is required.');
+      await updateDoc(doc(db, 'courses', input.id), {
+        title, description: input.description?.trim() || '', icon: input.icon?.trim() || '📚',
+        updated_at: serverTimestamp(),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['courses'] });
@@ -119,40 +106,23 @@ export function useCourses() {
 export function useCourseDetail(courseId: string | undefined) {
   const queryClient = useQueryClient();
 
-  const query = useQuery({
+  const query2 = useQuery({
     queryKey: ['course-detail', courseId],
     queryFn: async (): Promise<CourseWithContent | null> => {
-      const { data: course, error } = await getSupabaseClient()
-        .from('courses')
-        .select('*')
-        .eq('id', courseId!)
-        .single();
-      if (error) throw error;
+      const courseSnap = await getDoc(doc(db, 'courses', courseId!));
+      if (!courseSnap.exists()) return null;
+      const course = { id: courseSnap.id, ...courseSnap.data(), created_at: toDate(courseSnap.data().created_at), updated_at: toDate(courseSnap.data().updated_at) } as DbCourse;
 
-      const { data: chapters } = await getSupabaseClient()
-        .from('chapters')
-        .select('*')
-        .eq('course_id', courseId!)
-        .order('sort_order');
+      const chaptersSnap = await getDocs(query(collection(db, 'chapters'), where('course_id', '==', courseId!)));
+      const chapters = chaptersSnap.docs.map(d => ({ id: d.id, ...d.data(), created_at: toDate(d.data().created_at) })).sort((a: any, b: any) => a.sort_order - b.sort_order) as DbChapter[];
 
-      const chapterIds = (chapters || []).map((c) => c.id);
-      let subchapters: DbSubchapter[] = [];
-      if (chapterIds.length > 0) {
-        const { data } = await getSupabaseClient()
-          .from('subchapters')
-          .select('*')
-          .in('chapter_id', chapterIds)
-          .order('sort_order');
-        subchapters = (data || []) as DbSubchapter[];
+      const subchapters: DbSubchapter[] = [];
+      for (const ch of chapters) {
+        const subSnap = await getDocs(query(collection(db, 'subchapters'), where('chapter_id', '==', ch.id)));
+        subchapters.push(...subSnap.docs.map(d => ({ id: d.id, ...d.data(), created_at: toDate(d.data().created_at) })).sort((a: any, b: any) => a.sort_order - b.sort_order) as DbSubchapter[]);
       }
 
-      return {
-        ...course,
-        chapters: (chapters || []).map((ch) => ({
-          ...ch,
-          subchapters: subchapters.filter((s) => s.chapter_id === ch.id),
-        })),
-      } as CourseWithContent;
+      return { ...course, chapters: chapters.map(ch => ({ ...ch, subchapters: subchapters.filter(s => s.chapter_id === ch.id) })) };
     },
     enabled: !!courseId,
   });
@@ -162,17 +132,9 @@ export function useCourseDetail(courseId: string | undefined) {
   const addChapter = useMutation({
     mutationFn: async (input: { title: string; description: string }) => {
       const title = input.title?.trim();
-      if (!title || title.length > 200) throw new Error('Title is required and must be under 200 characters.');
-      const description = input.description?.trim() || '';
-      if (description.length > 2000) throw new Error('Description must be under 2000 characters.');
-      const existing = query.data?.chapters.length || 0;
-      const { error } = await getSupabaseClient().from('chapters').insert({
-        course_id: courseId!,
-        title,
-        description,
-        sort_order: existing,
-      });
-      if (error) throw error;
+      if (!title) throw new Error('Title is required.');
+      const existing = query2.data?.chapters.length || 0;
+      await addDoc(collection(db, 'chapters'), { course_id: courseId!, title, description: input.description?.trim() || '', sort_order: existing, created_at: serverTimestamp() });
     },
     onSuccess: () => { refetch(); toast.success('Chapter added!'); },
     onError: (err: any) => toast.error(err.message),
@@ -181,21 +143,15 @@ export function useCourseDetail(courseId: string | undefined) {
   const updateChapter = useMutation({
     mutationFn: async (input: { id: string; title: string; description: string }) => {
       const title = input.title?.trim();
-      if (!title || title.length > 200) throw new Error('Title is required and must be under 200 characters.');
-      const description = input.description?.trim() || '';
-      if (description.length > 2000) throw new Error('Description must be under 2000 characters.');
-      const { error } = await getSupabaseClient().from('chapters').update({ title, description }).eq('id', input.id);
-      if (error) throw error;
+      if (!title) throw new Error('Title is required.');
+      await updateDoc(doc(db, 'chapters', input.id), { title, description: input.description?.trim() || '' });
     },
     onSuccess: () => { refetch(); toast.success('Chapter updated!'); },
     onError: (err: any) => toast.error(err.message),
   });
 
   const deleteChapter = useMutation({
-    mutationFn: async (chapterId: string) => {
-      const { error } = await getSupabaseClient().from('chapters').delete().eq('id', chapterId);
-      if (error) throw error;
-    },
+    mutationFn: async (chapterId: string) => { await deleteDoc(doc(db, 'chapters', chapterId)); },
     onSuccess: () => { refetch(); toast.success('Chapter deleted'); },
     onError: (err: any) => toast.error(err.message),
   });
@@ -203,19 +159,10 @@ export function useCourseDetail(courseId: string | undefined) {
   const addSubchapter = useMutation({
     mutationFn: async (input: { chapter_id: string; title: string; content: string; media_type: string }) => {
       const title = input.title?.trim();
-      if (!title || title.length > 200) throw new Error('Title is required and must be under 200 characters.');
-      const content = input.content?.trim() || '';
-      if (content.length > 50000) throw new Error('Content must be under 50000 characters.');
-      const chapter = query.data?.chapters.find((c) => c.id === input.chapter_id);
+      if (!title) throw new Error('Title is required.');
+      const chapter = query2.data?.chapters.find(c => c.id === input.chapter_id);
       const existing = chapter?.subchapters.length || 0;
-      const { error } = await getSupabaseClient().from('subchapters').insert({
-        chapter_id: input.chapter_id,
-        title,
-        content,
-        media_type: input.media_type,
-        sort_order: existing,
-      });
-      if (error) throw error;
+      await addDoc(collection(db, 'subchapters'), { chapter_id: input.chapter_id, title, content: input.content?.trim() || '', media_type: input.media_type, sort_order: existing, created_at: serverTimestamp() });
     },
     onSuccess: () => { refetch(); toast.success('Lesson added!'); },
     onError: (err: any) => toast.error(err.message),
@@ -224,31 +171,18 @@ export function useCourseDetail(courseId: string | undefined) {
   const updateSubchapter = useMutation({
     mutationFn: async (input: { id: string; title: string; content: string; media_type: string }) => {
       const title = input.title?.trim();
-      if (!title || title.length > 200) throw new Error('Title is required and must be under 200 characters.');
-      const content = input.content?.trim() || '';
-      if (content.length > 50000) throw new Error('Content must be under 50000 characters.');
-      const { error } = await getSupabaseClient().from('subchapters').update({
-        title, content, media_type: input.media_type,
-      }).eq('id', input.id);
-      if (error) throw error;
+      if (!title) throw new Error('Title is required.');
+      await updateDoc(doc(db, 'subchapters', input.id), { title, content: input.content?.trim() || '', media_type: input.media_type });
     },
     onSuccess: () => { refetch(); toast.success('Lesson updated!'); },
     onError: (err: any) => toast.error(err.message),
   });
 
   const deleteSubchapter = useMutation({
-    mutationFn: async (subId: string) => {
-      const { error } = await getSupabaseClient().from('subchapters').delete().eq('id', subId);
-      if (error) throw error;
-    },
+    mutationFn: async (subId: string) => { await deleteDoc(doc(db, 'subchapters', subId)); },
     onSuccess: () => { refetch(); toast.success('Lesson deleted'); },
     onError: (err: any) => toast.error(err.message),
   });
 
-  return {
-    course: query.data,
-    isLoading: query.isLoading,
-    addChapter, updateChapter, deleteChapter,
-    addSubchapter, updateSubchapter, deleteSubchapter,
-  };
+  return { course: query2.data, isLoading: query2.isLoading, addChapter, updateChapter, deleteChapter, addSubchapter, updateSubchapter, deleteSubchapter };
 }

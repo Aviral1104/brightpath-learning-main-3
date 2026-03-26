@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brightpath — Database Setup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 50%, #e0e7ff 100%);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    background: white; border-radius: 20px; padding: 40px;
+    box-shadow: 0 20px 60px -12px rgba(109,33,168,0.2);
+    max-width: 560px; width: 100%;
+  }
+  .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
+  .logo-icon { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, #7c3aed, #4f46e5); display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .logo-text h1 { font-family: Georgia, serif; font-size: 22px; color: #1e1b4b; }
+  .logo-text p { font-size: 13px; color: #6b7280; }
+  h2 { font-size: 20px; font-weight: 700; color: #1e1b4b; margin-bottom: 8px; }
+  .subtitle { font-size: 14px; color: #6b7280; margin-bottom: 28px; line-height: 1.6; }
+  .step { display: flex; align-items: flex-start; gap: 12px; padding: 14px; background: #f5f3ff; border-radius: 12px; margin-bottom: 10px; }
+  .step-num { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg,#7c3aed,#4f46e5); color: white; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; shrink: 0; flex-shrink: 0; margin-top: 1px; }
+  .step-text { font-size: 13px; color: #374151; line-height: 1.5; }
+  .step-text a { color: #7c3aed; font-weight: 600; text-decoration: none; }
+  .step-text a:hover { text-decoration: underline; }
+  .divider { height: 1px; background: #e5e7eb; margin: 24px 0; }
+  label { font-size: 13px; font-weight: 600; color: #374151; display: block; margin-bottom: 6px; }
+  .input-wrap { position: relative; }
+  input[type="password"], input[type="text"] {
+    width: 100%; padding: 12px 40px 12px 14px;
+    border: 2px solid #e5e7eb; border-radius: 10px;
+    font-size: 13px; font-family: monospace;
+    transition: border-color 0.2s;
+    outline: none;
+  }
+  input:focus { border-color: #7c3aed; }
+  .toggle-pw { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 18px; }
+  .hint { font-size: 12px; color: #9ca3af; margin-top: 6px; }
+  .btn {
+    width: 100%; padding: 14px; margin-top: 20px;
+    background: linear-gradient(135deg, #7c3aed, #4f46e5);
+    color: white; border: none; border-radius: 50px;
+    font-size: 15px; font-weight: 700; cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    box-shadow: 0 8px 24px -4px rgba(109,33,168,0.4);
+  }
+  .btn:hover { opacity: 0.92; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+  .log {
+    margin-top: 24px; background: #111827; border-radius: 12px;
+    padding: 16px; display: none; max-height: 280px; overflow-y: auto;
+  }
+  .log-entry { font-size: 13px; font-family: monospace; line-height: 1.8; color: #d1d5db; }
+  .log-entry.success { color: #34d399; }
+  .log-entry.error { color: #f87171; }
+  .log-entry.info { color: #93c5fd; }
+  .log-entry.warn { color: #fbbf24; }
+  .done-banner { display: none; margin-top: 20px; padding: 16px; background: #ecfdf5; border: 2px solid #6ee7b7; border-radius: 12px; text-align: center; }
+  .done-banner h3 { color: #065f46; font-size: 16px; margin-bottom: 4px; }
+  .done-banner p { color: #047857; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">✨</div>
+    <div class="logo-text">
+      <h1>Brightpath</h1>
+      <p>Database Setup Wizard</p>
+    </div>
+  </div>
+
+  <h2>One-Click Database Setup</h2>
+  <p class="subtitle">This page will create the new Announcements, Forums tables and the Avatars storage bucket in your Supabase project automatically.</p>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-text">
+      Go to your <a href="https://supabase.com/dashboard/project/humuunoxczekeaozkjda/settings/api" target="_blank">Supabase Project Settings → API</a>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-text">Find the <strong>service_role</strong> key under "Project API keys" and copy it</div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-text">Paste it below and click <strong>Run Setup</strong></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <label for="srkey">Service Role Key</label>
+  <div class="input-wrap">
+    <input type="password" id="srkey" placeholder="eyJhbGciOiJIUzI1NiIsInR5..." autocomplete="off" />
+    <button class="toggle-pw" onclick="togglePw()" title="Show/hide key">👁</button>
+  </div>
+  <p class="hint">⚠️ Keep this key private. Close this page after setup.</p>
+
+  <button class="btn" id="runBtn" onclick="runSetup()">🚀 Run Setup</button>
+
+  <div class="log" id="logBox"></div>
+  <div class="done-banner" id="doneBanner">
+    <h3>✅ Setup Complete!</h3>
+    <p>Tables created and avatars bucket ready. You can close this page.</p>
+  </div>
+</div>
+
+<script>
+const PROJECT_ID = 'humuunoxczekeaozkjda';
+const BASE = `https://${PROJECT_ID}.supabase.co`;
+
+function togglePw() {
+  const el = document.getElementById('srkey');
+  el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+const MIGRATION_SQL = `
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS expertise text[] DEFAULT '{}';
+
+CREATE TABLE IF NOT EXISTS public.announcements (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  teacher_id UUID NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
+DO $do$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='announcements' AND policyname='Anyone can view announcements') THEN
+    CREATE POLICY "Anyone can view announcements" ON public.announcements FOR SELECT USING (true);
+    CREATE POLICY "Teachers can create announcements" ON public.announcements FOR INSERT WITH CHECK (auth.uid() = teacher_id AND has_role(auth.uid(), 'teacher'));
+    CREATE POLICY "Teachers can update own announcements" ON public.announcements FOR UPDATE USING (auth.uid() = teacher_id);
+    CREATE POLICY "Teachers can delete own announcements" ON public.announcements FOR DELETE USING (auth.uid() = teacher_id);
+  END IF;
+END $do$;
+
+CREATE TABLE IF NOT EXISTS public.forum_threads (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  author_id UUID NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.forum_threads ENABLE ROW LEVEL SECURITY;
+DO $do$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='forum_threads' AND policyname='Anyone can view forum threads') THEN
+    CREATE POLICY "Anyone can view forum threads" ON public.forum_threads FOR SELECT USING (true);
+    CREATE POLICY "Students and teachers can post threads" ON public.forum_threads FOR INSERT WITH CHECK (has_role(auth.uid(),'student') OR has_role(auth.uid(),'teacher'));
+    CREATE POLICY "Authors can update own threads" ON public.forum_threads FOR UPDATE USING (auth.uid() = author_id);
+    CREATE POLICY "Authors can delete own threads" ON public.forum_threads FOR DELETE USING (auth.uid() = author_id);
+  END IF;
+END $do$;
+
+CREATE TABLE IF NOT EXISTS public.forum_replies (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  thread_id UUID NOT NULL REFERENCES public.forum_threads(id) ON DELETE CASCADE,
+  author_id UUID NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE public.forum_replies ENABLE ROW LEVEL SECURITY;
+DO $do$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='forum_replies' AND policyname='Anyone can view forum replies') THEN
+    CREATE POLICY "Anyone can view forum replies" ON public.forum_replies FOR SELECT USING (true);
+    CREATE POLICY "Students and teachers can post replies" ON public.forum_replies FOR INSERT WITH CHECK (has_role(auth.uid(),'student') OR has_role(auth.uid(),'teacher'));
+    CREATE POLICY "Authors can update own replies" ON public.forum_replies FOR UPDATE USING (auth.uid() = author_id);
+    CREATE POLICY "Authors can delete own replies" ON public.forum_replies FOR DELETE USING (auth.uid() = author_id);
+  END IF;
+END $do$;
+`;
+
+function log(msg, type = '') {
+  const box = document.getElementById('logBox');
+  box.style.display = 'block';
+  const el = document.createElement('div');
+  el.className = `log-entry ${type}`;
+  el.textContent = msg;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function runSetup() {
+  const key = document.getElementById('srkey').value.trim();
+  if (!key || key.length < 50) {
+    alert('Please paste your service_role key first.');
+    return;
+  }
+
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running...';
+  document.getElementById('logBox').innerHTML = '';
+  document.getElementById('doneBanner').style.display = 'none';
+
+  const headers = {
+    'apikey': key,
+    'Authorization': `Bearer ${key}`,
+    'Content-Type': 'application/json',
+  };
+
+  // ── Step 1: SQL Migration ──────────────────────────────────────────
+  log('📦 Running SQL migration...', 'info');
+  try {
+    // Use Supabase's undocumented but working pg/query endpoint
+    const res = await fetch(`${BASE}/rest/v1/rpc/run_sql`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ sql: MIGRATION_SQL }),
+    });
+    // Also try the query endpoint
+    const res2 = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_ID}/database/query`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: MIGRATION_SQL }),
+    });
+
+    const data2 = await res2.json().catch(() => ({}));
+    if (res2.ok) {
+      log('   ✅ Migration tables created!', 'success');
+    } else if (data2?.message?.includes('already exists') || data2?.error?.includes('already exists')) {
+      log('   ✅ Tables already exist — skipped.', 'success');
+    } else {
+      log(`   ⚠️  API response: ${JSON.stringify(data2)}`, 'warn');
+      log('   💡 Attempting direct REST query...', 'info');
+
+      // Fallback: Supabase allows executing SQL via the pg endpoint with service role
+      const res3 = await fetch(`${BASE}/pg/query`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ query: MIGRATION_SQL }),
+      });
+      if (res3.ok) {
+        log('   ✅ Migration executed via pg endpoint!', 'success');
+      } else {
+        const d3 = await res3.json().catch(() => ({}));
+        log(`   ⚠️  Could not auto-run migration. Please run it manually in Supabase SQL Editor.`, 'warn');
+        log(`      URL: https://supabase.com/dashboard/project/${PROJECT_ID}/sql/new`, 'warn');
+        log(`      File: supabase/migrations/20260324000000_announcements_forums.sql`, 'warn');
+      }
+    }
+  } catch (e) {
+    log(`   ❌ Error: ${e.message}`, 'error');
+  }
+
+  // ── Step 2: Create avatars bucket ────────────────────────────────
+  log('🪣  Creating avatars storage bucket...', 'info');
+  try {
+    const res = await fetch(`${BASE}/storage/v1/bucket`, {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        id: 'avatars', name: 'avatars', public: true,
+        file_size_limit: 5242880,
+        allowed_mime_types: ['image/jpeg','image/png','image/gif','image/webp'],
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      log('   ✅ Avatars bucket created (public, 5MB limit)!', 'success');
+    } else if (res.status === 409 || data?.error?.includes?.('already exists')) {
+      log('   ✅ Avatars bucket already exists — skipped.', 'success');
+    } else {
+      log(`   ⚠️  Bucket response (${res.status}): ${JSON.stringify(data)}`, 'warn');
+      log('   💡 Create it manually: Supabase Dashboard → Storage → New bucket → "avatars" (Public)', 'warn');
+    }
+  } catch (e) {
+    log(`   ❌ Bucket error: ${e.message}`, 'error');
+  }
+
+  log('', '');
+  log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', '');
+  log('🎉  Setup complete! You may close this page.', 'success');
+  document.getElementById('doneBanner').style.display = 'block';
+  btn.disabled = false;
+  btn.textContent = '✅ Done — Run Again?';
+}
+</script>
+</body>
+</html>

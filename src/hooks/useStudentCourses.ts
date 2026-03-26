@@ -1,72 +1,57 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSupabaseClient, isBackendConfigured } from '@/integrations/backend/client';
+import {
+  collection, query, where, orderBy, getDocs, addDoc, deleteDoc,
+  doc, getDoc
+} from 'firebase/firestore';
+import { db } from '@/integrations/firebase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import type { CourseWithContent, DbCourse, DbSubchapter } from './useCourses';
+import type { CourseWithContent, DbSubchapter } from './useCourses';
+
+const toDate = (v: any) => v?.toDate?.()?.toISOString() || new Date().toISOString();
 
 export function useAllCourses() {
   const { user } = useAuth();
 
   return useQuery({
     queryKey: ['all-courses', user?.id],
-    queryFn: async (): Promise<CourseWithContent[]> => {
-      const supabase = getSupabaseClient();
+    queryFn: async (): Promise<(CourseWithContent & { teacherName: string; isEnrolled: boolean })[]> => {
+      const coursesSnap = await getDocs(collection(db, 'courses'));
+      if (coursesSnap.empty) return [];
+      const courses = coursesSnap.docs
+        .map(d => ({ id: d.id, ...d.data(), created_at: toDate(d.data().created_at), updated_at: toDate(d.data().updated_at) }))
+        .sort((a: any, b: any) => b.created_at.localeCompare(a.created_at)) as any[];
 
-      const { data: courses, error } = await supabase
-        .from('courses')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      if (!courses?.length) return [];
+      // Teacher names
+      const teacherIds = [...new Set(courses.map((c: any) => c.teacher_id))];
+      const nameMap: Record<string, string> = {};
+      await Promise.all(teacherIds.map(async (tid) => {
+        const snap = await getDoc(doc(db, 'profiles', tid as string));
+        if (snap.exists()) nameMap[tid as string] = snap.data().name;
+      }));
 
-      const courseIds = courses.map((c) => c.id);
-
-      const { data: chapters } = await supabase
-        .from('chapters')
-        .select('*')
-        .in('course_id', courseIds)
-        .order('sort_order');
-
-      const chapterIds = (chapters || []).map((ch) => ch.id);
-      let subchapters: DbSubchapter[] = [];
-      if (chapterIds.length > 0) {
-        const { data } = await supabase
-          .from('subchapters')
-          .select('*')
-          .in('chapter_id', chapterIds)
-          .order('sort_order');
-        subchapters = (data || []) as DbSubchapter[];
-      }
-
-      // Get teacher profiles for display
-      const teacherIds = [...new Set(courses.map((c) => c.teacher_id))];
-      const { data: profiles } = await supabase
-        .from('public_profiles' as any)
-        .select('user_id, name')
-        .in('user_id', teacherIds);
-      const teacherNameMap = new Map((profiles || []).map((p: any) => [p.user_id, p.name]));
-
-      // Get enrollments for the current user
+      // Enrollments
       let enrolledIds = new Set<string>();
-      if (user?.id && isBackendConfigured) {
-        const { data: enrollments } = await supabase
-          .from('course_enrollments' as any)
-          .select('course_id')
-          .eq('student_id', user.id);
-        enrolledIds = new Set((enrollments || []).map((e: any) => e.course_id));
+      if (user?.id) {
+        const enrollSnap = await getDocs(query(collection(db, 'enrollments'), where('student_id', '==', user.id)));
+        enrolledIds = new Set(enrollSnap.docs.map(d => d.data().course_id));
       }
 
-      return courses.map((course) => {
-        const courseChapters = (chapters || []).filter((ch) => ch.course_id === course.id);
+      // Chapters & Subchapters
+      return Promise.all(courses.map(async (course: any) => {
+        const chapSnap = await getDocs(query(collection(db, 'chapters'), where('course_id', '==', course.id)));
+        const chapters = chapSnap.docs.map(d => ({ id: d.id, ...d.data(), created_at: toDate(d.data().created_at) })).sort((a: any, b: any) => a.sort_order - b.sort_order) as any[];
+        const subchapters: DbSubchapter[] = [];
+        for (const ch of chapters) {
+          const subSnap = await getDocs(query(collection(db, 'subchapters'), where('chapter_id', '==', ch.id)));
+          subchapters.push(...subSnap.docs.map(d => ({ id: d.id, ...d.data(), created_at: toDate(d.data().created_at) })).sort((a: any, b: any) => a.sort_order - b.sort_order) as DbSubchapter[]);
+        }
         return {
           ...course,
-          teacherName: teacherNameMap.get(course.teacher_id) || 'Teacher',
+          teacherName: nameMap[course.teacher_id] || 'Teacher',
           isEnrolled: enrolledIds.has(course.id),
-          chapters: courseChapters.map((ch) => ({
-            ...ch,
-            subchapters: subchapters.filter((s) => s.chapter_id === ch.id),
-          })),
+          chapters: chapters.map(ch => ({ ...ch, subchapters: subchapters.filter(s => s.chapter_id === ch.id) })),
         };
-      }) as (CourseWithContent & { teacherName: string; isEnrolled: boolean })[];
+      }));
     },
     enabled: !!user,
   });
@@ -75,14 +60,14 @@ export function useAllCourses() {
 export function useEnrollCourse() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: async (courseId: string) => {
-      if (!isBackendConfigured || !user?.id) return;
-      const supabase = getSupabaseClient();
-      await supabase
-        .from('course_enrollments' as any)
-        .upsert({ course_id: courseId, student_id: user.id }, { onConflict: 'course_id,student_id' });
+      if (!user?.id) return;
+      // Check no duplicate
+      const existing = await getDocs(query(collection(db, 'enrollments'), where('course_id', '==', courseId), where('student_id', '==', user.id)));
+      if (existing.empty) {
+        await addDoc(collection(db, 'enrollments'), { course_id: courseId, student_id: user.id });
+      }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-courses'] }),
   });
@@ -91,16 +76,11 @@ export function useEnrollCourse() {
 export function useUnenrollCourse() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: async (courseId: string) => {
-      if (!isBackendConfigured || !user?.id) return;
-      const supabase = getSupabaseClient();
-      await supabase
-        .from('course_enrollments' as any)
-        .delete()
-        .eq('course_id', courseId)
-        .eq('student_id', user.id);
+      if (!user?.id) return;
+      const snap = await getDocs(query(collection(db, 'enrollments'), where('course_id', '==', courseId), where('student_id', '==', user.id)));
+      await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-courses'] }),
   });

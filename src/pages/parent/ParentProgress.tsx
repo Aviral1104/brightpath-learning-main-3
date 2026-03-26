@@ -1,18 +1,58 @@
 import DashboardLayout from '@/components/DashboardLayout';
-import { useAllCourses } from '@/hooks/useStudentCourses';
 import { useLinkedStudent, useChildSubmissions } from '@/hooks/useParentData';
 import { Lock, User } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
+import { db } from '@/integrations/firebase/client';
+
+// Fetch only courses the child is enrolled in, with teacher name
+function useChildEnrolledCourses(childId: string | undefined) {
+  return useQuery({
+    queryKey: ['child-enrolled-courses', childId],
+    queryFn: async () => {
+      if (!childId) return [];
+      const enrollSnap = await getDocs(query(collection(db, 'enrollments'), where('student_id', '==', childId)));
+      const courseIds = enrollSnap.docs.map(d => d.data().course_id as string);
+      if (courseIds.length === 0) return [];
+
+      const courses = await Promise.all(
+        courseIds.map(async (cid) => {
+          const snap = await getDoc(doc(db, 'courses', cid));
+          if (!snap.exists()) return null;
+          const data = snap.data();
+
+          // Get teacher name
+          let teacherName = 'Teacher';
+          if (data.teacher_id) {
+            const teacherSnap = await getDoc(doc(db, 'profiles', data.teacher_id));
+            if (teacherSnap.exists()) teacherName = teacherSnap.data().name;
+          }
+
+          // Get chapters
+          const chapSnap = await getDocs(query(collection(db, 'chapters'), where('course_id', '==', cid)));
+          const chapters = chapSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+          let totalLessons = 0;
+          for (const ch of chapters) {
+            const subSnap = await getDocs(query(collection(db, 'subchapters'), where('chapter_id', '==', ch.id)));
+            totalLessons += subSnap.size;
+          }
+
+          return { id: cid, ...data, teacherName, chaptersCount: chapters.length, totalLessons };
+        })
+      );
+      return courses.filter(Boolean);
+    },
+    enabled: !!childId,
+  });
+}
 
 export default function ParentProgress() {
-  const { data: courses = [], isLoading: loadingCourses } = useAllCourses();
   const { data: child, isLoading: loadingChild } = useLinkedStudent();
+  const { data: courses = [], isLoading: loadingCourses } = useChildEnrolledCourses(child?.id);
   const { data: submissions = [] } = useChildSubmissions(child?.id);
 
   const getChildScore = (courseId: string) => {
-    const courseSubs = submissions.filter((s: any) => {
-      const assignment = s.assignments;
-      return assignment && (assignment.course_id === courseId || assignment.course_title);
-    });
+    const courseSubs = submissions.filter((s: any) => s.assignment_id && s.course_id === courseId);
     if (!courseSubs.length) return null;
     const total = courseSubs.reduce((a: number, s: any) => a + (s.total_questions || 0), 0);
     const score = courseSubs.reduce((a: number, s: any) => a + (s.score || 0), 0);
@@ -41,7 +81,7 @@ export default function ParentProgress() {
           </div>
           <h2 className="font-display text-2xl font-bold text-foreground mb-3">No Student Linked</h2>
           <p className="text-muted-foreground max-w-sm">
-            Contact your school administrator to link your account to your child's profile.
+            Link your child's account from the dashboard to view their progress.
           </p>
         </div>
       </DashboardLayout>
@@ -71,8 +111,7 @@ export default function ParentProgress() {
         )}
 
         <div className="space-y-4">
-          {courses.map((course, i) => {
-            const totalLessons = course.chapters.reduce((a, ch) => a + ch.subchapters.length, 0);
+          {(courses as any[]).map((course: any, i: number) => {
             const childScore = getChildScore(course.id);
             return (
               <div
@@ -101,23 +140,17 @@ export default function ParentProgress() {
                       <span>Assignment Score</span>
                       <span>{childScore}%</span>
                     </div>
-                    <div
-                      className="w-full bg-muted rounded-full h-2.5"
-                      role="progressbar" aria-valuenow={childScore} aria-valuemin={0} aria-valuemax={100}
-                    >
-                      <div
-                        className={`h-2.5 rounded-full transition-all ${childScore >= 80 ? 'bg-success' : 'bg-warning'}`}
-                        style={{ width: `${childScore}%` }}
-                      />
+                    <div className="w-full bg-muted rounded-full h-2.5" role="progressbar" aria-valuenow={childScore} aria-valuemin={0} aria-valuemax={100}>
+                      <div className={`h-2.5 rounded-full transition-all ${childScore >= 80 ? 'bg-success' : 'bg-warning'}`} style={{ width: `${childScore}%` }} />
                     </div>
                   </div>
                 )}
 
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: 'Chapters', value: course.chapters.length },
-                    { label: 'Lessons', value: totalLessons },
-                    { label: 'Instructor', value: (course as any).teacherName || 'Teacher' },
+                    { label: 'Chapters', value: course.chaptersCount },
+                    { label: 'Lessons', value: course.totalLessons },
+                    { label: 'Instructor', value: course.teacherName },
                   ].map((stat) => (
                     <div key={stat.label} className="bg-muted/50 rounded-xl p-3 text-center">
                       <p className="font-display font-bold text-foreground text-sm">{stat.value}</p>
@@ -132,7 +165,8 @@ export default function ParentProgress() {
           {!loadingCourses && courses.length === 0 && (
             <div className="text-center py-16 bg-card rounded-2xl border border-border">
               <span className="text-5xl block mb-4" aria-hidden="true">📊</span>
-              <p className="text-muted-foreground">No courses to track yet.</p>
+              <h3 className="font-display text-xl font-semibold text-foreground mb-2">No enrolled courses yet</h3>
+              <p className="text-muted-foreground">{child.name} hasn't enrolled in any courses yet.</p>
             </div>
           )}
         </div>
