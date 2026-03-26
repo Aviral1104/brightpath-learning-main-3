@@ -1,10 +1,29 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useLinkedStudent, useChildSubmissions } from '@/hooks/useParentData';
+import { useQuery } from '@tanstack/react-query';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '@/integrations/firebase/client';
 import { MessageSquare, Star, User, Lock } from 'lucide-react';
+
+/** Fetch every assignment and return a map of id → title. */
+function useAllAssignmentTitles() {
+  return useQuery({
+    queryKey: ['all-assignment-titles'],
+    queryFn: async () => {
+      const snap = await getDocs(collection(db, 'assignments'));
+      const map: Record<string, string> = {};
+      snap.docs.forEach(d => {
+        map[d.id] = (d.data().title as string) || 'Assignment';
+      });
+      return map;
+    },
+  });
+}
 
 export default function ParentFeedback() {
   const { data: child, isLoading: loadingChild } = useLinkedStudent();
   const { data: submissions = [], isLoading: loadingSubs } = useChildSubmissions(child?.id);
+  const { data: assignmentTitles = {} } = useAllAssignmentTitles();
 
   const withFeedback = submissions.filter((s: any) => s.feedback);
 
@@ -68,7 +87,8 @@ export default function ParentFeedback() {
               const total = sub.total_questions || sub.totalQuestions || 1;
               const score = sub.score || 0;
               const scorePercent = Math.round((score / total) * 100);
-              const assignmentTitle = sub.assignmentTitle || sub.assignments?.title || 'Assignment';
+              // Look up the real assignment title from the map
+              const assignmentTitle = assignmentTitles[sub.assignment_id] || 'Assignment';
               return (
                 <div
                   key={sub.id}

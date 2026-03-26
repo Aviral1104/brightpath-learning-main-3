@@ -37,23 +37,7 @@ export function useChildSubmissions(childId: string | undefined) {
     queryFn: async () => {
       if (!childId) return [];
       const snap = await getDocs(query(collection(db, 'submissions'), where('student_id', '==', childId)));
-      const submissions = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-
-      // Enrich each submission with the assignment title
-      const enriched = await Promise.all(
-        submissions.map(async (sub) => {
-          const assignmentId = sub.assignment_id;
-          if (assignmentId) {
-            const assignSnap = await getDoc(doc(db, 'assignments', assignmentId));
-            if (assignSnap.exists()) {
-              sub.assignmentTitle = assignSnap.data().title || null;
-            }
-          }
-          return sub;
-        })
-      );
-
-      return enriched;
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     },
     enabled: !!childId,
   });
