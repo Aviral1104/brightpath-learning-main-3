@@ -72,8 +72,8 @@ Our source code rests securely under the `/src` directory, broken down by domain
 - **`/src/contexts`**: React context providers used for global state management.
 - **`/src/lib`**: Pure utility functions and generic helpers (e.g. `utils.ts` for Tailwind class merging).
 - **`/src/integrations`**: Contains the glue code for third-party systems.
-  - **Supabase**: Backend integration handles secure auth and database schemas.
-  - **React Query**: We use `@tanstack/react-query` to handle asynchronous state management, cache data, and seamlessly synchronize with backend changes.
+  - **Firebase**: Backend integration handles secure authentication (Firebase Auth) and real-time data storage (Cloud Firestore). Config lives in `/src/integrations/firebase/client.ts`.
+  - **React Query**: We use `@tanstack/react-query` to handle asynchronous state management, cache data, and seamlessly synchronize with Firestore changes.
 - **`/src/types`**: High-level TypeScript interfaces or type aliases used across the application.
 
 ### Adding New Features
@@ -123,5 +123,5 @@ The Parent portal focuses on visibility, allowing guardians to track and support
 ### Role-Based Access Control (RBAC)
 
 Routing and data access are strictly controlled based on the authenticated user's role.
-- **Authentication (`AuthPage.tsx`)**: Handles secure login and registration mapping users to their respective roles via Supabase.
-- **Data Isolation**: Supabase Row Level Security (RLS) policies ensure that Students only see their own data, Parents only see their linked child's data, and Teachers only access data relevant to their assigned classes.
+- **Authentication (`AuthPage.tsx`)**: Handles secure login and registration via Firebase Authentication (Email/Password). On sign-up, a user profile document is created in the `profiles` Firestore collection with the selected role.
+- **Data Isolation**: Each data hook filters Firestore queries by the authenticated user's ID and role. Students see only their own submissions and enrolled courses; Parents see only their linked child's data; Teachers access only their own courses and assignments.

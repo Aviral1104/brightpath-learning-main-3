@@ -68,7 +68,7 @@ export default function ParentFeedback() {
               const total = sub.total_questions || sub.totalQuestions || 1;
               const score = sub.score || 0;
               const scorePercent = Math.round((score / total) * 100);
-              const assignmentTitle = sub.assignments?.title || sub.assignment_id || 'Assignment';
+              const assignmentTitle = sub.assignmentTitle || sub.assignments?.title || 'Assignment';
               return (
                 <div
                   key={sub.id}
