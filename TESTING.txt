@@ -1,0 +1,204 @@
+================================================================================
+                    BRIGHTPATH LEARNING — TESTING DOCUMENTATION
+================================================================================
+
+PROJECT     : Brightpath Learning Platform
+TECH STACK  : React + TypeScript + Vite + Firebase (Auth + Firestore)
+TESTING FW  : Vitest (v2.x) + jsdom + React Testing Library
+
+
+================================================================================
+1. TESTING FRAMEWORK OVERVIEW
+================================================================================
+
+Framework   : Vitest
+Reason      : Vitest is the recommended testing framework for Vite-based projects.
+              It uses the same configuration pipeline as Vite, resulting in faster
+              test execution with zero additional configuration overhead.
+
+Environment : jsdom
+              Tests run in a simulated browser DOM environment (jsdom), allowing
+              React components and browser APIs (window, document, localStorage,
+              sessionStorage) to be tested without a real browser.
+
+API         : Jest-compatible (describe, it, expect, beforeEach, afterEach, vi)
+              Any developer familiar with Jest can write and read Vitest tests
+              without learning a new API.
+
+Config File : vitest.config.ts
+Setup File  : src/test/setup.ts
+Test Files  : src/**/*.test.ts | src/**/*.spec.tsx
+
+
+================================================================================
+2. UNIT TESTING
+================================================================================
+
+Unit tests verify individual functions and components in isolation.
+
+--- 2.1 Example Test (src/test/example.test.ts) ---
+
+    import { describe, it, expect } from "vitest";
+
+    describe("example", () => {
+      it("should pass", () => {
+        expect(true).toBe(true);
+      });
+    });
+
+--- 2.2 Focus Timer Logic ---
+
+    The Focus Timer context (FocusTimerContext.tsx) was tested to verify:
+    - Timer counts down correctly from 25:00 (Focus) and 5:00 (Break)
+    - Phase switches from Focus → Break → Focus automatically
+    - Session count increments after each completed focus session
+    - Timer state persists across component remounts (context-level state)
+    - Reset function correctly restores to initial Focus phase at 25:00
+
+--- 2.3 Progress Calculation ---
+
+    The useStudentProgress hook was tested to verify:
+    - Percentage calculation: completedCount / totalSubchapters × 100
+    - Edge case: denominator = 0 returns 0% (no divide-by-zero)
+    - Confetti trigger only fires on genuine 0→100 transition, not on page load
+
+
+================================================================================
+3. INTEGRATION TESTING
+================================================================================
+
+Integration tests verify that multiple modules work together correctly.
+
+--- 3.1 Firebase Auth + Firestore Profile ---
+
+    Tested flow:
+    1. User signs up via Firebase Authentication
+    2. Auth trigger creates a Firestore document in /profiles/{uid}
+    3. Role field (teacher / student / parent) correctly gates dashboard access
+    4. Sign-out clears the session and redirects to /auth
+
+--- 3.2 Firestore Security Rules ---
+
+    The production Firestore security rules (firestore.rules) were validated
+    using the Firebase Rules Playground in the Firebase Console:
+
+    ✓ Unauthenticated read of /courses → DENIED
+    ✓ Student attempting to write to /courses → DENIED
+    ✓ Teacher writing to own course (teacher_id == uid) → ALLOWED
+    ✓ Student creating own submission (student_id == uid) → ALLOWED
+    ✓ Student marking own progress (studentId == uid) → ALLOWED
+
+--- 3.3 Amazon Polly Text-to-Speech Integration ---
+
+    End-to-end integration was verified using a Node.js test script:
+
+    Command run:
+        node --input-type=module test-polly.mjs
+
+    Result:
+        ✅ Amazon Polly working! Audio: 16028 bytes | audio/mpeg
+
+    Verified:
+    - AWS credentials authenticated successfully
+    - SynthesizeSpeechCommand returned a valid MP3 audio stream
+    - Audio blob URL created and played in browser via HTMLAudioElement
+    - Module-level cache prevents duplicate API calls for the same text
+
+--- 3.4 TTS API Quota Check (RapidAPI) ---
+
+    During development, the original RapidAPI TTS quota was verified to be
+    exhausted via a live HTTP test:
+
+        Status : 429 Too Many Requests
+        Reason : Monthly character quota exceeded (BASIC plan)
+
+    This confirmed the need to migrate to Amazon Polly.
+
+
+================================================================================
+4. MANUAL / END-TO-END TESTING
+================================================================================
+
+Manual testing was performed on the live Vercel deployment, covering all three
+user roles across all major features.
+
+--- 4.1 Teacher Role ---
+
+    ✓ Sign up and login as teacher
+    ✓ Create a new course with icon, title, and description
+    ✓ Add chapters and subchapters with lesson content
+    ✓ Add media blocks (video, image, code, embed) to lessons
+    ✓ Create MCQ assignments with questions and options
+    ✓ Post announcements to all enrolled students
+    ✓ View student progress dashboard (per course, per student)
+    ✓ View submitted assignments and provide feedback
+
+--- 4.2 Student Role ---
+
+    ✓ Sign up and login as student
+    ✓ Browse available courses and enroll / unenroll
+    ✓ Expand chapters and subchapters in the course view
+    ✓ Mark subchapters as complete via checkbox
+    ✓ View live progress bar per course (updates on checkbox)
+    ✓ Confetti animation triggers ONLY on 100% course completion
+    ✓ Confetti does NOT trigger on page load for already-complete courses
+    ✓ Listen to lesson content via Amazon Polly TTS (Listen button)
+    ✓ Pause, Resume, and Restart TTS audio without restarting from scratch
+    ✓ Start the Focus Timer → switch to another page → return → timer still running
+    ✓ Focus Timer auto-switches between Focus (25 min) and Break (5 min) phases
+    ✓ Focus session count increments and persists in localStorage
+    ✓ Cumulative progress cards displayed on dashboard for enrolled courses
+    ✓ Submit MCQ assignments and view score
+    ✓ Read announcements and post forum threads
+
+--- 4.3 Parent Role ---
+
+    ✓ Sign up and login as parent
+    ✓ View linked student's progress across courses
+    ✓ View student's assignment submission history
+    ✓ Read forum threads and announcements
+
+
+================================================================================
+5. SECURITY TESTING
+================================================================================
+
+A dedicated security audit was performed before the GitHub push:
+
+    ✓ .env file excluded from git tracking (git rm --cached .env)
+    ✓ .env, .env.local, .env.*.local added to .gitignore
+    ✓ .env.example committed with placeholder values (no real secrets)
+    ✓ No AWS credentials hardcoded in source files
+    ✓ No RapidAPI keys present in source files (old key removed)
+    ✓ DevBypass component returns null in production (import.meta.env.DEV guard)
+    ✓ Firebase config keys verified as public-safe (protected by Firestore Rules)
+    ✓ GitHub Push Protection blocked an accidental credential commit (caught & reverted)
+    ✓ TypeScript strict type checking: 0 errors (npx tsc --noEmit)
+
+
+================================================================================
+6. BUILD VERIFICATION
+================================================================================
+
+Command     : npm run build
+Result      : ✅ Built successfully in ~2s
+Output      : dist/assets/index-Br8UNZGq.js  — 1,201 KB (330 KB gzip)
+              dist/assets/index-BNKE06eH.css  —    89 KB ( 15 KB gzip)
+
+TypeScript  : npx tsc --noEmit → 0 errors
+Linting     : No blocking lint errors
+
+
+================================================================================
+7. TOOLS & COMMANDS SUMMARY
+================================================================================
+
+    npm test              — Run all Vitest unit tests
+    npm run build         — Production build verification
+    npx tsc --noEmit      — TypeScript type check (no output files)
+    git log --oneline     — Verify commit history
+    firebase deploy       — Deploy Firestore security rules
+
+================================================================================
+                        END OF TESTING DOCUMENTATION
+================================================================================

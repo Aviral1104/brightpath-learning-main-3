@@ -151,42 +151,6 @@ export default function TeacherDashboard() {
               }
             </div>
 
-            {/* ── Student Progress side panel (below feedback/forums) ─────── */}
-            <div className="card-premium p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <GraduationCap className="w-4 h-4 text-primary" />
-                  <h3 className="font-semibold text-sm text-foreground">Student Progress</h3>
-                </div>
-                <span className="text-xs text-muted-foreground">{progressList.length} records</span>
-              </div>
-
-              {progressLoading ? (
-                <p className="text-xs text-muted-foreground py-4 text-center">Loading…</p>
-              ) : progressList.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-4 text-center">No progress records yet</p>
-              ) : (
-                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                  {progressList.map((sp) => (
-                    <div key={sp.key} className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-medium text-foreground leading-tight">{sp.studentName || 'Student'}</p>
-                          <p className="text-[10px] text-muted-foreground leading-tight truncate max-w-[140px]">{sp.courseName}</p>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {sp.pct === 100 && (
-                            <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded-full font-medium">✓</span>
-                          )}
-                          <span className="text-xs font-semibold text-foreground tabular-nums">{sp.pct}%</span>
-                        </div>
-                      </div>
-                      <Progress value={sp.pct} className="h-1" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         </div>
 
