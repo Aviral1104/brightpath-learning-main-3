@@ -3,14 +3,66 @@ import { useAuth } from '@/contexts/AuthContext';
 import { BookOpen, ClipboardList, CheckCircle, TrendingUp, UserCog, Megaphone, MessageCircle, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { useState } from 'react';
 import { useAllCourses } from '@/hooks/useStudentCourses';
 import { useStudentStats } from '@/hooks/useStudentStats';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
 import { useForumThreads } from '@/hooks/useForums';
+import { useStudentProgress } from '@/hooks/useProgress';
 import EditProfileModal from '@/components/EditProfileModal';
 import FocusTimer from '@/components/FocusTimer';
 import { formatDistanceToNow } from 'date-fns';
+
+// ─── Per-course progress mini-card (reads live from Firestore) ────────────────
+function CourseProgressCard({ courseId, title, icon, totalSubchapters, index }: {
+  courseId: string; title: string; icon: string; totalSubchapters: number; index: number;
+}) {
+  const { progress } = useStudentProgress(courseId);
+  const denominator = totalSubchapters || progress?.totalSubchaptersAtEnrollment || 0;
+  const completed = progress?.completedCount ?? 0;
+  const pct = denominator > 0 ? Math.round((completed / denominator) * 100) : 0;
+
+  const radius = 20;
+  const circ = 2 * Math.PI * radius;
+  const dash = circ - (pct / 100) * circ;
+  const ringColor = pct === 100 ? '#10b981' : pct >= 50 ? '#8b5cf6' : pct > 0 ? '#f59e0b' : '#94a3b8';
+
+  return (
+    <div
+      className="card-premium p-4 flex items-center gap-4 hover:shadow-elevated hover:-translate-y-0.5 transition-all animate-fade-in"
+      style={{ animationDelay: `${index * 0.07}s` }}
+    >
+      {/* Radial ring */}
+      <div className="relative shrink-0">
+        <svg width="52" height="52" viewBox="0 0 52 52" className="-rotate-90">
+          <circle cx="26" cy="26" r={radius} fill="none" stroke="hsl(var(--muted))" strokeWidth="5" />
+          <circle
+            cx="26" cy="26" r={radius} fill="none"
+            stroke={ringColor} strokeWidth="5" strokeLinecap="round"
+            strokeDasharray={circ} strokeDashoffset={dash}
+            className="transition-all duration-700"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-xs font-bold text-foreground">{pct}%</span>
+        </div>
+      </div>
+      {/* Labels */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="text-lg">{icon}</span>
+          <p className="font-semibold text-sm text-foreground truncate">{title}</p>
+        </div>
+        <Progress value={pct} className="h-1.5" />
+        <p className="text-xs text-muted-foreground mt-1">
+          {completed} of {denominator} lessons
+          {pct === 100 && <span className="ml-2 text-emerald-500 font-semibold">✓ Complete!</span>}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export default function StudentDashboard() {
   const { user } = useAuth();
@@ -20,6 +72,7 @@ export default function StudentDashboard() {
   const { data: threads = [] } = useForumThreads(3);
 
   const [profileOpen, setProfileOpen] = useState(false);
+  const enrolledCourses = courses.filter((c: any) => c.isEnrolled);
 
   const statCards = [
     { label: 'Enrolled Courses',      value: stats?.enrolledCourses ?? courses.length, icon: BookOpen,     color: 'from-violet-500 to-indigo-600' },
@@ -140,6 +193,31 @@ export default function StudentDashboard() {
             </div>
           </div>
         </div>
+
+        {/* Cumulative course progress — full width below courses grid */}
+        {!isLoading && enrolledCourses.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-xl font-semibold text-foreground">My Progress</h2>
+              <Link to="/student/courses" className="text-sm text-primary hover:underline font-medium">View All Courses →</Link>
+            </div>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {enrolledCourses.map((course, i) => {
+                const totalSubchapters = course.chapters.reduce((acc, ch) => acc + ch.subchapters.length, 0);
+                return (
+                  <CourseProgressCard
+                    key={course.id}
+                    courseId={course.id}
+                    title={course.title}
+                    icon={course.icon || '📚'}
+                    totalSubchapters={totalSubchapters}
+                    index={i}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <EditProfileModal open={profileOpen} onOpenChange={setProfileOpen} />

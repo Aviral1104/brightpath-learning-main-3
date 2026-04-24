@@ -34,6 +34,9 @@ export default function DevBypass() {
   const [loading, setLoading] = useState<UserRole | null>(null);
   const navigate = useNavigate();
 
+  // Never expose dev bypass in production builds
+  if (!import.meta.env.DEV) return null;
+
   const handleSelect = async (r: typeof roles[number]) => {
     setLoading(r.role);
     const creds = DEV_ACCOUNTS[r.role];

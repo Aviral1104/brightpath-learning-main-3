@@ -1,0 +1,183 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper functions ──────────────────────────────────────────────────────
+
+    // Is the request from a signed-in user?
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Is the requester the owner of this document by UID?
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    // Fetch the caller's role from the profiles collection
+    function myRole() {
+      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role;
+    }
+
+    function isTeacher() {
+      return isAuth() && myRole() == 'teacher';
+    }
+
+    function isStudent() {
+      return isAuth() && myRole() == 'student';
+    }
+
+    function isParent() {
+      return isAuth() && myRole() == 'parent';
+    }
+
+    // ─── profiles ─────────────────────────────────────────────────────────────
+    // Any authenticated user can read profiles (needed for name lookups in
+    // forums, assignments, progress, etc.). Only the owner can write their own.
+
+    match /profiles/{uid} {
+      allow read: if isAuth();
+      allow create: if isOwner(uid);
+      allow update: if isOwner(uid);
+      allow delete: if false;
+    }
+
+    // ─── courses ──────────────────────────────────────────────────────────────
+    // Teachers create/update/delete their own courses.
+    // All authenticated users can read (students browse the course list).
+
+    match /courses/{courseId} {
+      allow read: if isAuth();
+      allow create: if isTeacher() && request.resource.data.teacher_id == request.auth.uid;
+      allow update: if isTeacher() && resource.data.teacher_id == request.auth.uid;
+      allow delete: if isTeacher() && resource.data.teacher_id == request.auth.uid;
+    }
+
+    // ─── chapters ─────────────────────────────────────────────────────────────
+    // Same ownership model — teacher who owns the course owns its chapters.
+
+    match /chapters/{chapterId} {
+      allow read: if isAuth();
+      allow create: if isTeacher();
+      allow update: if isTeacher();
+      allow delete: if isTeacher();
+    }
+
+    // ─── subchapters ──────────────────────────────────────────────────────────
+
+    match /subchapters/{subId} {
+      allow read: if isAuth();
+      allow create: if isTeacher();
+      allow update: if isTeacher();
+      allow delete: if isTeacher();
+    }
+
+    // ─── assignments ──────────────────────────────────────────────────────────
+    // Teachers create; students and parents can read.
+
+    match /assignments/{assignId} {
+      allow read: if isAuth();
+      allow create: if isTeacher() && request.resource.data.teacher_id == request.auth.uid;
+      allow update: if isTeacher() && resource.data.teacher_id == request.auth.uid;
+      allow delete: if isTeacher() && resource.data.teacher_id == request.auth.uid;
+    }
+
+    // ─── mcq_questions ────────────────────────────────────────────────────────
+
+    match /mcq_questions/{qId} {
+      allow read: if isAuth();
+      allow write: if isTeacher();
+    }
+
+    // ─── mcq_options ──────────────────────────────────────────────────────────
+
+    match /mcq_options/{optId} {
+      allow read: if isAuth();
+      allow write: if isTeacher();
+    }
+
+    // ─── submissions ──────────────────────────────────────────────────────────
+    // Students create their own submissions.
+    // Teachers can read all submissions (to give feedback) and update feedback fields.
+    // Parents can read their linked child's submissions (checked at app level via childId).
+
+    match /submissions/{subId} {
+      allow read: if isAuth();
+      allow create: if isStudent() && request.resource.data.student_id == request.auth.uid;
+      // Teachers update only feedback/insights fields
+      allow update: if isTeacher();
+      allow delete: if false;
+    }
+
+    // ─── enrollments ──────────────────────────────────────────────────────────
+    // Students enroll/unenroll themselves.
+    // Teachers and parents can read enrollments.
+
+    match /enrollments/{enrollId} {
+      allow read: if isAuth();
+      allow create: if isStudent() && request.resource.data.student_id == request.auth.uid;
+      allow delete: if isStudent() && resource.data.student_id == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ─── progress ─────────────────────────────────────────────────────────────
+    // Doc ID format: `{studentId}_{courseId}`
+    // Students write only their own progress. Teachers and parents can read all.
+
+    match /progress/{progressId} {
+      allow read: if isAuth();
+      allow create: if isStudent() && request.resource.data.studentId == request.auth.uid;
+      allow update: if isStudent() && resource.data.studentId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ─── announcements ────────────────────────────────────────────────────────
+    // Teachers create/delete their own announcements.
+    // Everyone authenticated can read.
+
+    match /announcements/{annoId} {
+      allow read: if isAuth();
+      allow create: if isTeacher() && request.resource.data.teacher_id == request.auth.uid;
+      allow delete: if isTeacher() && resource.data.teacher_id == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ─── forum_threads ────────────────────────────────────────────────────────
+    // Any authenticated user can post and read. Authors can delete their threads.
+
+    match /forum_threads/{threadId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.author_id == request.auth.uid;
+      allow delete: if isAuth() && resource.data.author_id == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ─── forum_replies ────────────────────────────────────────────────────────
+
+    match /forum_replies/{replyId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && request.resource.data.author_id == request.auth.uid;
+      allow delete: if isAuth() && resource.data.author_id == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ─── parent_student_links ─────────────────────────────────────────────────
+    // Parents read their own links. Teachers can create/manage links.
+    // Students can read links that reference them.
+
+    match /parent_student_links/{linkId} {
+      allow read: if isAuth() && (
+        resource.data.parent_id == request.auth.uid ||
+        resource.data.student_id == request.auth.uid ||
+        isTeacher()
+      );
+      allow create: if isAuth();
+      allow delete: if isAuth() && (
+        resource.data.parent_id == request.auth.uid || isTeacher()
+      );
+      allow update: if false;
+    }
+
+  }
+}

@@ -61,17 +61,51 @@ export function useEnrollCourse() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (courseId: string) => {
+    mutationFn: async (params: {
+      courseId: string;
+      courseName?: string;
+      totalSubchapters?: number;
+    }) => {
+      const { courseId, courseName = '', totalSubchapters = 0 } = params;
       if (!user?.id) return;
-      // Check no duplicate
-      const existing = await getDocs(query(collection(db, 'enrollments'), where('course_id', '==', courseId), where('student_id', '==', user.id)));
+      // Check no duplicate enrollment
+      const existing = await getDocs(
+        query(
+          collection(db, 'enrollments'),
+          where('course_id', '==', courseId),
+          where('student_id', '==', user.id)
+        )
+      );
       if (existing.empty) {
-        await addDoc(collection(db, 'enrollments'), { course_id: courseId, student_id: user.id });
+        await addDoc(collection(db, 'enrollments'), {
+          course_id: courseId,
+          student_id: user.id,
+        });
+
+        // Create progress document (snapshot totalSubchapters at enrollment time)
+        const { setDoc, doc: firestoreDoc } = await import('firebase/firestore');
+        const docId = `${user.id}_${courseId}`;
+        await setDoc(
+          firestoreDoc(db, 'progress', docId),
+          {
+            studentId: user.id,
+            studentName: user.name || '',
+            courseId,
+            courseName,
+            completedSubchapters: [],
+            completedCount: 0,
+            totalSubchaptersAtEnrollment: totalSubchapters,
+            verified: false,
+            lastActive: new Date().toISOString(),
+          },
+          { merge: true }
+        );
       }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-courses'] }),
   });
 }
+
 
 export function useUnenrollCourse() {
   const { user } = useAuth();

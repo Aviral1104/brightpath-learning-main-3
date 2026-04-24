@@ -1,13 +1,18 @@
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/contexts/AuthContext';
-import { BookOpen, ClipboardList, MessageSquare, Users, Plus, UserCog, Megaphone, MessageCircle, Clock } from 'lucide-react';
+import {
+  BookOpen, ClipboardList, MessageSquare, Users, Plus, UserCog,
+  Megaphone, MessageCircle, Clock, GraduationCap,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { useState } from 'react';
 import { useCourses } from '@/hooks/useCourses';
 import { useTeacherStats } from '@/hooks/useTeacherStats';
 import { useAnnouncements } from '@/hooks/useAnnouncements';
 import { useForumThreads } from '@/hooks/useForums';
+import { useAllStudentProgress } from '@/hooks/useProgress';
 import EditProfileModal from '@/components/EditProfileModal';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -18,13 +23,17 @@ export default function TeacherDashboard() {
   const { data: announcements = [] } = useAnnouncements(3);
   const { data: threads = [] } = useForumThreads(3);
 
+  const courseIds = courses.map((c) => c.id);
+  const courseNames = Object.fromEntries(courses.map((c) => [c.id, c.title]));
+  const { progressList, isLoading: progressLoading } = useAllStudentProgress(courseIds, courseNames);
+
   const [profileOpen, setProfileOpen] = useState(false);
 
   const statCards = [
-    { label: 'My Courses',       value: courses.length,                      icon: BookOpen,    color: 'from-violet-500 to-indigo-600' },
-    { label: 'Total Assignments', value: stats?.totalAssignments ?? '—',      icon: ClipboardList, color: 'from-indigo-500 to-blue-600' },
-    { label: 'Students Enrolled', value: stats?.enrolledStudents ?? '—',     icon: Users,       color: 'from-purple-500 to-violet-600' },
-    { label: 'Pending Reviews',   value: stats?.pendingReviews ?? '—',        icon: MessageSquare, color: 'from-fuchsia-500 to-purple-600' },
+    { label: 'My Courses',        value: courses.length,               icon: BookOpen,      color: 'from-violet-500 to-indigo-600' },
+    { label: 'Total Assignments', value: stats?.totalAssignments ?? '—', icon: ClipboardList, color: 'from-indigo-500 to-blue-600' },
+    { label: 'Students Enrolled', value: stats?.enrolledStudents ?? '—', icon: Users,         color: 'from-purple-500 to-violet-600' },
+    { label: 'Pending Reviews',   value: stats?.pendingReviews ?? '—',   icon: MessageSquare, color: 'from-fuchsia-500 to-purple-600' },
   ];
 
   return (
@@ -65,7 +74,7 @@ export default function TeacherDashboard() {
           ))}
         </div>
 
-        {/* Courses + Announcements + Forums */}
+        {/* Courses + Right column */}
         <div className="grid lg:grid-cols-3 gap-6">
 
           {/* Courses */}
@@ -141,8 +150,82 @@ export default function TeacherDashboard() {
                   </div>
               }
             </div>
+
+            {/* ── Student Progress side panel (below feedback/forums) ─────── */}
+            <div className="card-premium p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="w-4 h-4 text-primary" />
+                  <h3 className="font-semibold text-sm text-foreground">Student Progress</h3>
+                </div>
+                <span className="text-xs text-muted-foreground">{progressList.length} records</span>
+              </div>
+
+              {progressLoading ? (
+                <p className="text-xs text-muted-foreground py-4 text-center">Loading…</p>
+              ) : progressList.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-4 text-center">No progress records yet</p>
+              ) : (
+                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                  {progressList.map((sp) => (
+                    <div key={sp.key} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-medium text-foreground leading-tight">{sp.studentName || 'Student'}</p>
+                          <p className="text-[10px] text-muted-foreground leading-tight truncate max-w-[140px]">{sp.courseName}</p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {sp.pct === 100 && (
+                            <span className="text-[10px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded-full font-medium">✓</span>
+                          )}
+                          <span className="text-xs font-semibold text-foreground tabular-nums">{sp.pct}%</span>
+                        </div>
+                      </div>
+                      <Progress value={sp.pct} className="h-1" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* ── Full-width Student Progress table (all courses) ─────────────── */}
+        {!progressLoading && progressList.length > 0 && (
+          <div className="card-premium overflow-hidden">
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
+              <GraduationCap className="w-5 h-5 text-primary" />
+              <h2 className="font-display text-base font-semibold text-foreground">All Student Progress</h2>
+              <span className="ml-auto text-xs text-muted-foreground">{progressList.length} students across {courses.length} course{courses.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="divide-y divide-border">
+              {progressList.map((sp) => (
+                <div key={`${sp.studentId}_${sp.courseId}`} className="flex items-center gap-4 px-6 py-3 hover:bg-muted/30 transition-colors">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <span className="text-xs font-bold text-primary">
+                      {(sp.studentName || 'S').charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">{sp.studentName || 'Student'}</p>
+                    <p className="text-xs text-muted-foreground truncate">{sp.courseName}</p>
+                  </div>
+                  <div className="w-40 shrink-0">
+                    <Progress value={sp.pct} className="h-1.5" />
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 w-28 justify-end">
+                    <span className="text-xs text-muted-foreground">{sp.completedCount}/{sp.totalSubchapters}</span>
+                    <span className="text-sm font-semibold text-foreground tabular-nums w-9 text-right">{sp.pct}%</span>
+                    {sp.pct === 100 && (
+                      <span className="bg-emerald-500/10 text-emerald-500 text-[10px] px-2 py-0.5 rounded-full font-medium">Done</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
       </div>
 
       <EditProfileModal open={profileOpen} onOpenChange={setProfileOpen} />

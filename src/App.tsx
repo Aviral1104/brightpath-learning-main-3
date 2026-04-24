@@ -2,8 +2,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { FocusTimerProvider } from "@/contexts/FocusTimerContext";
 import { ThemeProvider } from "next-themes";
 import LandingPage from "./pages/LandingPage";
 import AuthPage from "./pages/AuthPage";
@@ -48,6 +49,17 @@ function ProtectedRoute({ children, allowedRole }: { children: React.ReactNode; 
   return <>{children}</>;
 }
 
+/** Single FocusTimerProvider shared across all student pages — timer keeps ticking on navigation */
+function StudentLayout() {
+  return (
+    <ProtectedRoute allowedRole="student">
+      <FocusTimerProvider>
+        <Outlet />
+      </FocusTimerProvider>
+    </ProtectedRoute>
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
@@ -71,14 +83,16 @@ const App = () => (
               <Route path="/teacher/forums" element={<ProtectedRoute allowedRole="teacher"><ForumsPage /></ProtectedRoute>} />
               <Route path="/teacher/forums/:threadId" element={<ProtectedRoute allowedRole="teacher"><ForumThreadPage /></ProtectedRoute>} />
 
-              {/* Student routes */}
-              <Route path="/student" element={<ProtectedRoute allowedRole="student"><StudentDashboard /></ProtectedRoute>} />
-              <Route path="/student/courses" element={<ProtectedRoute allowedRole="student"><StudentCourses /></ProtectedRoute>} />
-              <Route path="/student/assignments" element={<ProtectedRoute allowedRole="student"><StudentAssignments /></ProtectedRoute>} />
-              <Route path="/student/feedback" element={<ProtectedRoute allowedRole="student"><StudentFeedback /></ProtectedRoute>} />
-              <Route path="/student/announcements" element={<ProtectedRoute allowedRole="student"><AnnouncementsPage /></ProtectedRoute>} />
-              <Route path="/student/forums" element={<ProtectedRoute allowedRole="student"><ForumsPage /></ProtectedRoute>} />
-              <Route path="/student/forums/:threadId" element={<ProtectedRoute allowedRole="student"><ForumThreadPage /></ProtectedRoute>} />
+              {/* Student routes — single StudentLayout keeps FocusTimerProvider alive across all pages */}
+              <Route element={<StudentLayout />}>
+                <Route path="/student" element={<StudentDashboard />} />
+                <Route path="/student/courses" element={<StudentCourses />} />
+                <Route path="/student/assignments" element={<StudentAssignments />} />
+                <Route path="/student/feedback" element={<StudentFeedback />} />
+                <Route path="/student/announcements" element={<AnnouncementsPage />} />
+                <Route path="/student/forums" element={<ForumsPage />} />
+                <Route path="/student/forums/:threadId" element={<ForumThreadPage />} />
+              </Route>
 
               {/* Parent routes */}
               <Route path="/parent" element={<ProtectedRoute allowedRole="parent"><ParentDashboard /></ProtectedRoute>} />

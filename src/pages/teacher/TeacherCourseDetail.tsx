@@ -1,15 +1,17 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useCourseDetail, useCourses } from '@/hooks/useCourses';
+import { useCourseProgress } from '@/hooks/useProgress';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Edit2, Save, ArrowLeft,
-  FileText, Video, Volume2, File, Image, Code2, Link, Layers,
+  FileText, Video, Volume2, File, Image, Code2, Link, Layers, Users,
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -25,6 +27,50 @@ const mediaColors: Record<string, string> = {
   text: 'text-muted-foreground', video: 'text-red-500', audio: 'text-purple-500',
   image: 'text-blue-500', code: 'text-green-500', file: 'text-amber-500', embed: 'text-cyan-500',
 };
+
+// ─── Student Progress Panel (teacher view) ────────────────────────────────────
+function StudentProgressPanel({ courseId, totalSubchapters }: { courseId: string | undefined; totalSubchapters: number }) {
+  const { progressList, isLoading } = useCourseProgress(courseId);
+
+  if (isLoading) return null;
+  if (progressList.length === 0) return null;
+
+  return (
+    <div className="bg-card rounded-2xl border border-border shadow-soft overflow-hidden">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
+        <Users className="w-5 h-5 text-primary" aria-hidden="true" />
+        <h2 className="font-display text-base font-semibold text-foreground">Student Progress</h2>
+        <span className="ml-auto text-xs text-muted-foreground">{progressList.length} enrolled</span>
+      </div>
+      <div className="divide-y divide-border">
+        {progressList.map((sp) => {
+          // Use the live course total as denominator — handles pre-feature enrollments
+          const total = totalSubchapters || sp.totalSubchaptersAtEnrollment || 0;
+          const pct = total > 0 ? Math.round((sp.completedCount / total) * 100) : 0;
+          return (
+            <div key={sp.studentId} className="px-6 py-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-foreground">{sp.studentName || 'Student'}</p>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{sp.completedCount}/{total} lessons</span>
+                  <span className="font-semibold text-foreground tabular-nums w-8 text-right">{pct}%</span>
+                  {pct === 100 && (
+                    <span className="bg-emerald-500/10 text-emerald-600 text-xs px-2 py-0.5 rounded-full font-medium">
+                      ✓ Complete
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Progress value={pct} className="h-1.5" />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 
 export default function TeacherCourseDetail() {
   const { courseId } = useParams();
@@ -371,6 +417,12 @@ export default function TeacherCourseDetail() {
             </div>
           ))}
         </div>
+
+        {/* Student Progress Panel */}
+        <StudentProgressPanel
+          courseId={courseId}
+          totalSubchapters={course.chapters.reduce((acc, ch) => acc + ch.subchapters.length, 0)}
+        />
 
         {/* Add Chapter Dialog */}
         <Dialog open={chapterDialog} onOpenChange={setChapterDialog}>
